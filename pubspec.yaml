@@ -1,0 +1,43 @@
+name: global_english_800
+description: 800 Global English Offline Learning App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  http: ^1.1.0
+  path_provider: ^2.1.1
+  archive: ^3.4.9
+  connectivity_plus: ^6.0.3
+  shared_preferences: ^2.2.2
+  audioplayers: ^6.0.0
+  url_launcher: ^6.3.1
+  video_player: ^2.9.1
+  record: ^7.1.1
+  chewie: ^1.14.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo/800logo.png
+    - assets/sounds/
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/800ico.png"
+  adaptive_icon_background: "#002E52"
+  adaptive_icon_foreground: "assets/icon/800ico.png"
+
+
