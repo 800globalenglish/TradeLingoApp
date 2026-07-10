@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../widgets/app_header.dart';
 import '../services/content_package_service.dart';
 import '../services/resource_strings.dart';
+import 'help_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -81,7 +82,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'Logged in as: $_username',
+                    '${ResourceStrings.instance.get('aiadd2890')}: $_username',
                     style: const TextStyle(color: Colors.white54, fontSize: 13),
                   ),
                 ),
@@ -159,6 +160,21 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: 32),
+              Center(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.help_outline),
+                  label: Text(ResourceStrings.instance.get('aiadd3890')),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const HelpScreen()),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ),
