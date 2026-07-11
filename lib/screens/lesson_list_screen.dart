@@ -213,13 +213,7 @@ class _LessonListScreenState extends State<LessonListScreen> {
                   title: Text(lesson.title.isNotEmpty
                       ? lesson.title
                       : 'Lesson ${lesson.lessonNumber}'),
-                  trailing: Icon(
-                    lesson.isContentDownloaded
-                        ? Icons.check_circle
-                        : Icons.download_for_offline_outlined,
-                    color: lesson.isContentDownloaded ? Colors.green : Colors.grey,
-                  ),
-                  onTap: () {
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.red),                  onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => LessonDetailScreen(lesson: lesson)),
                     );

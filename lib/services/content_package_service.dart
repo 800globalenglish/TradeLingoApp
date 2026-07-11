@@ -7,7 +7,7 @@ import 'package:archive/archive.dart';
 import 'api_service.dart';
 
 
-const String membershipStatusUrl = 'https://rpm.aibiz4u.com/MobileApi/GetMembershipStatus';
+const String membershipStatusUrl = 'https://www.800globalenglish.com/MobileApi/GetMembershipStatus';
 
 const String freeVersionUrl = 'https://cdn.800globalenglish.com/content/mobileZip/version-free.txt';
 const String freeZipUrl = 'https://cdn.800globalenglish.com/content/mobileZip/content-package-free.zip';

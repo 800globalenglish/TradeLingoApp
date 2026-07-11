@@ -139,7 +139,13 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
             if (_isChecking)
               const CircularProgressIndicator()
             else
-              Text(_statusMessage, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+            // CHANGED — wrapped in a full-width SizedBox so textAlign.center
+            // actually has room to center within, instead of the Text
+            // shrinking to fit its content and looking left-pulled.
+              SizedBox(
+                width: double.infinity,
+                child: Text(_statusMessage, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+              ),
             const SizedBox(height: 24),
             if (_isDownloading && _currentStatusCode == 'extracting')
               const CircularProgressIndicator()

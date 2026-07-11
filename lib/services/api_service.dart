@@ -4,9 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/lesson.dart';
 import 'local_db.dart';
 
-// TODO: replace with your real server address once the endpoints exist,
-// e.g. https://www.800globalenglish.com
-const String baseUrl = 'https://rpm.aibiz4u.com';
+const String baseUrl = 'https://www.800globalenglish.com';
 
 class ApiService {
   final LocalDb _localDb = LocalDb.instance;
@@ -34,8 +32,6 @@ class ApiService {
       }
       return false;
     } catch (e) {
-      // ignore: avoid_print
-      print('DEBUG login error: $e');
       return false;
     }
   }
@@ -110,14 +106,10 @@ class ApiService {
           'totalScoreStar': '0',
         },
       );
-      // ignore: avoid_print
-      print('DEBUG submitNounResult status=${response.statusCode} body=${response.body}');
       if (response.statusCode != 200) return false;
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
-      // ignore: avoid_print
-      print('DEBUG submitNounResult ERROR: $e');
       return false; // still offline - try again later
     }
   }
@@ -141,14 +133,10 @@ class ApiService {
           'totalScoreStar': '0',
         },
       );
-      // ignore: avoid_print
-      print('DEBUG submitGrammarResult status=${response.statusCode} body=${response.body}');
       if (response.statusCode != 200) return false;
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
-      // ignore: avoid_print
-      print('DEBUG submitGrammarResult ERROR: $e');
       return false;
     }
   }
@@ -182,18 +170,12 @@ class ApiService {
   Future<void> syncPendingResults() async {
     final token = await getSavedToken();
     if (token == null) {
-      // ignore: avoid_print
-      print('DEBUG syncPendingResults: no saved token, skipping sync');
       return; // not logged in - nothing to sync yet
     }
 
     final unsyncedNoun = await _localDb.getUnsyncedNounResults();
-    // ignore: avoid_print
-    print('DEBUG syncPendingResults: found ${unsyncedNoun.length} unsynced noun results');
     for (final row in unsyncedNoun) {
       final success = await _submitNounResult(row, token);
-      // ignore: avoid_print
-      print('DEBUG noun sync result for ${row['lessonGuid']}/${row['nounQuizType']}: $success');
       if (success) {
         await _localDb.markNounResultSynced(
           row['lessonGuid'] as String,
@@ -203,12 +185,8 @@ class ApiService {
     }
 
     final unsyncedGrammar = await _localDb.getUnsyncedGrammarResults();
-    // ignore: avoid_print
-    print('DEBUG syncPendingResults: found ${unsyncedGrammar.length} unsynced grammar results');
     for (final row in unsyncedGrammar) {
       final success = await _submitGrammarResult(row, token);
-      // ignore: avoid_print
-      print('DEBUG grammar sync result for ${row['lessonGuid']}/${row['quizType']}: $success');
       if (success) {
         await _localDb.markGrammarResultSynced(
           row['lessonGuid'] as String,
@@ -218,8 +196,6 @@ class ApiService {
     }
 
     final unsyncedOral = await _localDb.getUnsyncedOralPracticeResults();
-    // ignore: avoid_print
-    print('DEBUG syncPendingResults: found ${unsyncedOral.length} unsynced oral results');
     for (final row in unsyncedOral) {
       final success = await _submitOralResult(row, token);
       if (success) {
@@ -252,15 +228,11 @@ class ApiService {
     try {
       final response = await http.get(Uri.parse('$baseUrl/MobileApi/GetMyProgress?token=$token'));
       if (response.statusCode != 200) {
-        // ignore: avoid_print
-        print('DEBUG pullServerProgress: status=${response.statusCode}');
         return;
       }
 
       final data = jsonDecode(response.body);
       if (data['success'] != true) {
-        // ignore: avoid_print
-        print('DEBUG pullServerProgress: server returned success=false');
         return;
       }
 
@@ -279,11 +251,6 @@ class ApiService {
         }
       }
 
-      // ignore: avoid_print
-      print('DEBUG pullServerProgress: server returned ${(data['nounResults'] as List?)?.length ?? 0} noun, ${(data['grammarResults'] as List?)?.length ?? 0} grammar, ${(data['passedOralKeywordIds'] as List?)?.length ?? 0} oral');
-      // ignore: avoid_print
-      print('DEBUG pullServerProgress: locally cached lessonIds = ${lessons.map((l) => l.lessonId).toList()}');
-
       const nounTypeToHubKey = {
         'text/image': 'nounQuizTextImage',
         'text/audio': 'nounQuizTextAudio',
@@ -296,21 +263,14 @@ class ApiService {
         3: 'advanceQuiz',
       };
 
-      int mergedCount = 0;
-
       final nounResults = data['nounResults'] as List<dynamic>? ?? [];
       for (final r in nounResults) {
         final lessonGuid = lessonIdToGuid[r['lessonId']];
         final hubKey = nounTypeToHubKey[r['nounQuizType']];
         if (lessonGuid == null || hubKey == null) {
-          // ignore: avoid_print
-          print('DEBUG pullServerProgress: SKIPPED noun result lessonId=${r['lessonId']} nounQuizType=${r['nounQuizType']} (lessonGuid found=${lessonGuid != null}, hubKey found=${hubKey != null})');
           continue; // lesson not cached locally yet, or unrecognized type
         }
         await _localDb.savePendingResultIfBetter(lessonGuid, hubKey, (r['percentage'] as num).toDouble());
-        // ignore: avoid_print
-        print('DEBUG pullServerProgress: MERGED noun lessonId=${r['lessonId']} -> $hubKey = ${r['percentage']}%');
-        mergedCount++;
       }
 
       final grammarResults = data['grammarResults'] as List<dynamic>? ?? [];
@@ -319,7 +279,6 @@ class ApiService {
         final hubKey = grammarTypeIdToHubKey[r['quizTypeId']];
         if (lessonGuid == null || hubKey == null) continue;
         await _localDb.savePendingResultIfBetter(lessonGuid, hubKey, (r['percentage'] as num).toDouble());
-        mergedCount++;
       }
 
       final passedOralKeywordIds = data['passedOralKeywordIds'] as List<dynamic>? ?? [];
@@ -340,14 +299,10 @@ class ApiService {
         // Immediately mark it synced too, since this data literally came FROM
         // the server - pushing it right back up would be pointless.
         await _localDb.markOralPracticeResultSynced(info['lessonGuid']!, info['title']!);
-        mergedCount++;
       }
-
-      // ignore: avoid_print
-      print('DEBUG pullServerProgress: merged $mergedCount results from server');
     } catch (e) {
-      // ignore: avoid_print
-      print('DEBUG pullServerProgress ERROR: $e');
+      // silent failure - offline or server unreachable, caller has no
+      // dependency on this succeeding immediately
     }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'lesson_list_screen.dart';
 import 'pdf_list_screen.dart';
@@ -67,116 +68,153 @@ class _SplashScreenState extends State<SplashScreen> {
     setState(() => _selectedLanguage = code);
   }
 
+  // NEW — builds the personal subdomain link and copies it to the clipboard.
+  Future<void> _copyShareLink() async {
+    if (_username == null) return;
+    final link = 'https://$_username.800globalenglish.com';
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${ResourceStrings.instance.get('aiadd2959')} ${ResourceStrings.instance.get('aiadd2840')} $link')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF002E52),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const AppHeader(height: 60),
-              if (_username != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    '${ResourceStrings.instance.get('aiadd2890')}: $_username',
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const AppHeader(height: 60),
+                      if (_username != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            '${ResourceStrings.instance.get('aiadd2890')}: $_username',
+                            style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: DropdownButton<String>(
+                          value: _selectedLanguage,
+                          underline: const SizedBox(),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          items: _languages.entries
+                              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                              .toList(),
+                          onChanged: _changeLanguage,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.menu_book),
+                          label: Text(ResourceStrings.instance.get('aiadd1437')),
+                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const LessonListScreen()),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.picture_as_pdf),
+                          label: Text(ResourceStrings.instance.get('aiadd3971')),
+                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const PdfListScreen()),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.download),
+                          label: Text(ResourceStrings.instance.get('aiadd3934')),
+                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const DownloadManagerScreen()),
+                            );
+                          },
+                        ),
+                      ),
+                      if (_showOfflineContentButton) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.offline_bolt),
+                            label: Text(ResourceStrings.instance.get('aiadd3932')),
+                            style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 32),
+                      Center(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.help_outline),
+                          label: Text('${ResourceStrings.instance.get('aiadd2883')} FAQs'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const HelpScreen()),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              const SizedBox(height: 24),
+              ),
+            ),
+            // NEW — footer with the share-link action, only shown once we know the username
+            if (_username != null)
               Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.black.withOpacity(0.15),
+                  border: const Border(top: BorderSide(color: Colors.white24)),
                 ),
-                child: DropdownButton<String>(
-                  value: _selectedLanguage,
-                  underline: const SizedBox(),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  items: _languages.entries
-                      .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-                      .toList(),
-                  onChanged: _changeLanguage,
-                ),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.menu_book),
-                  label: Text(ResourceStrings.instance.get('aiadd1437')),
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const LessonListScreen()),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.picture_as_pdf),
-                  label: Text(ResourceStrings.instance.get('aiadd3971')),
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PdfListScreen()),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.download),
-                  label: Text(ResourceStrings.instance.get('aiadd3934')),
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const DownloadManagerScreen()),
-                    );
-                  },
-                ),
-              ),
-              if (_showOfflineContentButton) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.offline_bolt),
-                    label: Text(ResourceStrings.instance.get('aiadd3932')),
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
-                      );
-                    },
+                child: TextButton.icon(
+                  icon: const Icon(Icons.link, color: Colors.white70, size: 18),
+                  label: Text(
+                    ResourceStrings.instance.get('aiadd2626'),
+                    style: const TextStyle(color: Colors.white70),
                   ),
-                ),
-              ],
-              const SizedBox(height: 32),
-              Center(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.help_outline),
-                  label: Text(ResourceStrings.instance.get('aiadd3890')),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const HelpScreen()),
-                    );
-                  },
+                  onPressed: _copyShareLink,
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );

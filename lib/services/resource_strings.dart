@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String resourceStringsBaseUrl = 'https://rpm.aibiz4u.com/MobileApi/GetResourceStrings';
+const String resourceStringsBaseUrl = 'https://www.800globalenglish.com/MobileApi/GetResourceStrings';
 
 class ResourceStrings {
   static final ResourceStrings instance = ResourceStrings._internal();
