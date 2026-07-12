@@ -94,10 +94,7 @@ class _LessonListScreenState extends State<LessonListScreen> {
 
 
   Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    await prefs.remove('memberId');
-    await prefs.remove('username');
+    await ApiService().logout();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),

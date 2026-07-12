@@ -1,15 +1,26 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String resourceStringsBaseUrl = 'https://www.800globalenglish.com/MobileApi/GetResourceStrings';
 
-class ResourceStrings {
+// CHANGED — now extends ChangeNotifier so the app can react live when the
+// language (and therefore text direction) changes, instead of only ever
+// picking up RTL/LTR correctly at first app launch.
+class ResourceStrings extends ChangeNotifier {
   static final ResourceStrings instance = ResourceStrings._internal();
   ResourceStrings._internal();
 
   Map<String, String> _strings = {};
   String _loadedLanguage = '';
+
+  // NEW — the language codes (matching languages.dart exactly) that need
+  // right-to-left layout. Just Arabic and Hebrew for now.
+  static const Set<String> _rtlLanguages = {'ar-SA', 'he-IL'};
+
+  // NEW — whether the CURRENTLY LOADED language should render right-to-left.
+  bool get isRtl => _rtlLanguages.contains(_loadedLanguage);
 
   // Call this once at startup, and again whenever the language changes.
   Future<void> load(String languageCode) async {
@@ -21,6 +32,7 @@ class ResourceStrings {
       final Map<String, dynamic> decoded = jsonDecode(cached);
       _strings = decoded.map((k, v) => MapEntry(k, v.toString()));
       _loadedLanguage = languageCode;
+      notifyListeners(); // NEW — so RTL/LTR updates immediately from cache too
     }
 
     // Then try to get a fresh copy from the server
@@ -34,6 +46,7 @@ class ResourceStrings {
         _strings = fresh;
         _loadedLanguage = languageCode;
         await prefs.setString('resourceStrings_$languageCode', jsonEncode(fresh));
+        notifyListeners(); // NEW
       }
     } catch (e) {
       // offline - whatever was cached above (if anything) is used instead

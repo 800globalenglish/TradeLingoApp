@@ -62,7 +62,16 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
     final prefs = await SharedPreferences.getInstance();
     final language = prefs.getString('selectedLanguage') ?? 'en-US';
 
-    final isPaid = await ContentPackageService.instance.checkIsPaidNow();
+    // FIXED — checkIsPaidNow() now returns bool?; null means "couldn't
+    // verify" (e.g. offline, or a URL/token mismatch), not "confirmed free".
+    // Previously this fell straight into `_isPaidMember = isPaid` even when
+    // isPaid was really just a failed-check default of false — so a genuine
+    // paid member would see "Welcome Free Member!" any time the check
+    // couldn't complete. Now we fall back to the last known confirmed tier
+    // instead of assuming free.
+    final isPaidResult = await ContentPackageService.instance.checkIsPaidNow();
+    final downloadedTier = prefs.getString('contentPackageTier');
+    final isPaid = isPaidResult ?? (downloadedTier == 'full');
 
     final serverLessons = await _api.fetchLessonsFromServer();
 
@@ -192,7 +201,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${ResourceStrings.instance.get('aiadd3934')}${_username != null ? " ($_username)" : ""}'),
+        title: Text('${ResourceStrings.instance.get('aiadd4061')}${_username != null ? " ($_username)" : ""}'),
         actions: widget.isOnboarding
             ? [
           TextButton(

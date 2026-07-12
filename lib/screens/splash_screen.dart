@@ -7,6 +7,7 @@ import 'download_manager_screen.dart';
 import 'content_download_screen.dart';
 import '../services/languages.dart';
 import '../services/api_service.dart';
+import '../services/local_db.dart';
 import '../widgets/app_header.dart';
 import '../services/content_package_service.dart';
 import '../services/resource_strings.dart';
@@ -21,8 +22,12 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   String _selectedLanguage = 'en-US';
+  // NEW — the dropdown's current pick, which may differ from _selectedLanguage
+  // until the person actually confirms it with the arrow button.
+  String _pendingLanguage = 'en-US';
   String? _username;
   bool _showOfflineContentButton = true;
+  bool _isConfirmingLanguage = false;
 
   final Map<String, String> _languages = appLanguages;
 
@@ -55,17 +60,50 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _loadSavedLanguage() async {
     final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('selectedLanguage') ?? 'en-US';
     setState(() {
-      _selectedLanguage = prefs.getString('selectedLanguage') ?? 'en-US';
+      _selectedLanguage = saved;
+      _pendingLanguage = saved;
     });
   }
 
-  Future<void> _changeLanguage(String? code) async {
-    if (code == null) return;
+  // NEW — actually applies the pending language: saves it, reloads UI text,
+  // and pre-fetches/caches that language's lesson list right away (while
+  // online), so switching to a brand-new language and going offline
+  // afterward doesn't leave the person stuck with an empty lesson list and
+  // no explanation.
+  Future<void> _confirmLanguageChange() async {
+    if (_pendingLanguage == _selectedLanguage) return; // nothing changed
+
+    setState(() => _isConfirmingLanguage = true);
+
+    final code = _pendingLanguage;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selectedLanguage', code);
     await ResourceStrings.instance.load(code);
-    setState(() => _selectedLanguage = code);
+
+    // Pre-fetch this language's lessons now, while we know we're online
+    // (the person just interacted with the app). If this fails (e.g. a
+    // connection drop mid-tap), it's not fatal - the lesson list screen
+    // will show its own proper "you need to be online" message later.
+    try {
+      final serverLessons = await ApiService().fetchLessonsFromServer();
+      if (serverLessons != null) {
+        await LocalDb.instance.saveLessons(serverLessons, code);
+      }
+    } catch (e) {
+      // ignore - lesson list screen handles the offline case on its own
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _selectedLanguage = code;
+      _isConfirmingLanguage = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${_languages[code]} ✓')),
+    );
   }
 
   // NEW — builds the personal subdomain link and copies it to the clipboard.
@@ -103,20 +141,48 @@ class _SplashScreenState extends State<SplashScreen> {
                           ),
                         ),
                       const SizedBox(height: 24),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: DropdownButton<String>(
-                          value: _selectedLanguage,
-                          underline: const SizedBox(),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          items: _languages.entries
-                              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-                              .toList(),
-                          onChanged: _changeLanguage,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: DropdownButton<String>(
+                              value: _pendingLanguage,
+                              underline: const SizedBox(),
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              items: _languages.entries
+                                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                                  .toList(),
+                              onChanged: (code) {
+                                if (code != null) setState(() => _pendingLanguage = code);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // NEW — explicit confirm button. Only enabled once a
+                          // DIFFERENT language is actually picked, so it's
+                          // clear something needs to happen, and tapping it
+                          // gives visible feedback (spinner, then a snackbar)
+                          // instead of the previous silent instant-switch.
+                          if (_isConfirmingLanguage)
+                            const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              ),
+                            )
+                          else
+                            IconButton.filled(
+                              icon: const Icon(Icons.arrow_forward),
+                              tooltip: 'Apply language',
+                              onPressed: _pendingLanguage != _selectedLanguage ? _confirmLanguageChange : null,
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 32),
                       SizedBox(

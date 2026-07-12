@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/content_package_service.dart';
 import '../services/resource_strings.dart';
 
@@ -28,7 +29,13 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
   }
 
   Future<void> _loadRealSize() async {
-    final isPaid = await _service.checkIsPaidNow();
+    // FIXED — checkIsPaidNow() now returns bool?; null means "couldn't
+    // verify" (e.g. offline), so fall back to the last known tier rather
+    // than assuming free.
+    final isPaidResult = await _service.checkIsPaidNow();
+    final prefs = await SharedPreferences.getInstance();
+    final downloadedTier = prefs.getString('contentPackageTier');
+    final isPaid = isPaidResult ?? (downloadedTier == 'full');
     final size = await _service.getRemoteZipSizeBytes(isPaid: isPaid);
     if (mounted) setState(() => _knownSizeBytes = size);
   }

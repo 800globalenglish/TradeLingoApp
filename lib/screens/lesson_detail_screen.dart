@@ -105,7 +105,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen>
                         height: 50,
                         child: SmartImage(url: keyword.imageUrl, width: 50, height: 50),
                       ),
-                      title: Text(keyword.title),
+                      title: Text(keyword.title, textDirection: TextDirection.ltr),
                       subtitle: keyword.translation != null ? Text(keyword.translation!) : null,
                       trailing: IconButton(
                         icon: const Icon(Icons.volume_up),
@@ -135,7 +135,14 @@ class _LessonDetailScreenState extends State<LessonDetailScreen>
                   itemBuilder: (context, index) {
                     final sentence = lesson.sentences[index];
                     return ListTile(
-                      title: Text(sentence.title),
+                      // FIXED — the English sentence must always render
+                      // left-to-right, even when the app's overall layout
+                      // direction is RTL for Arabic/Hebrew. Without this,
+                      // wrapping the whole app in Directionality.rtl also
+                      // flipped the English text's own paragraph direction,
+                      // which is wrong — only the translation below it
+                      // should follow RTL.
+                      title: Text(sentence.title, textDirection: TextDirection.ltr),
                       subtitle: sentence.translation != null ? Text(sentence.translation!) : null,
                       trailing: IconButton(
                         icon: const Icon(Icons.volume_up),

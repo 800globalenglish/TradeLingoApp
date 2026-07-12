@@ -17,32 +17,53 @@ class GlobalEnglishApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '800 Global English',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: Colors.white,
-        colorScheme: ColorScheme.fromSeed(seedColor: brandDarkBlue),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: brandDarkBlue,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          iconTheme: IconThemeData(color: Colors.white),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: brandDarkBlue,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    // CHANGED — wrapped MaterialApp in a ListenableBuilder that listens to
+    // ResourceStrings (now a ChangeNotifier). Whenever the language changes
+    // anywhere in the app (splash screen dropdown, welcome wizard, etc.),
+    // this rebuilds MaterialApp with the correct text direction. Without
+    // this, RTL/LTR would only ever be set correctly once, at first launch,
+    // and switching to/from Arabic or Hebrew later wouldn't visually mirror
+    // the layout even though the text itself would still translate fine.
+    return ListenableBuilder(
+      listenable: ResourceStrings.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: '800 Global English',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            scaffoldBackgroundColor: Colors.white,
+            colorScheme: ColorScheme.fromSeed(seedColor: brandDarkBlue),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: brandDarkBlue,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              iconTheme: IconThemeData(color: Colors.white),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: brandDarkBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: brandDarkBlue),
+            ),
           ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: brandDarkBlue),
-        ),
-      ),
-      home: const StartupScreen(),
+          // NEW — this is what actually flips the whole app's layout
+          // (text alignment, Row ordering, EdgeInsetsDirectional, etc.)
+          // for Arabic/Hebrew, applied globally to every screen.
+          builder: (context, child) {
+            return Directionality(
+              textDirection: ResourceStrings.instance.isRtl ? TextDirection.rtl : TextDirection.ltr,
+              child: child!,
+            );
+          },
+          home: const StartupScreen(),
+        );
+      },
     );
   }
 }

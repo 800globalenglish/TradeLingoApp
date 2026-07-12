@@ -31,7 +31,10 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
   }
 
   Future<void> _loadRealSize() async {
-    final isPaid = await _service.checkIsPaidNow();
+    final isPaidResult = await _service.checkIsPaidNow();
+    final prefs = await SharedPreferences.getInstance();
+    final downloadedTier = prefs.getString('contentPackageTier');
+    final isPaid = isPaidResult ?? (downloadedTier == 'full');
     final size = await _service.getRemoteZipSizeBytes(isPaid: isPaid);
     if (mounted) setState(() => _knownSizeBytes = size);
   }

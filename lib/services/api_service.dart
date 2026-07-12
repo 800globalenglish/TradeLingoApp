@@ -4,7 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/lesson.dart';
 import 'local_db.dart';
 
-const String baseUrl = 'https://www.800globalenglish.com';
+// TODO: replace with your real server address once the endpoints exist,
+// e.g. https://www.800globalenglish.com
+const String baseUrl = 'https://rpm.aibiz4u.com';
 
 class ApiService {
   final LocalDb _localDb = LocalDb.instance;
@@ -32,6 +34,8 @@ class ApiService {
       }
       return false;
     } catch (e) {
+      // ignore: avoid_print
+      print('DEBUG login error: $e');
       return false;
     }
   }
@@ -48,7 +52,50 @@ class ApiService {
 
   Future<bool> isLoggedIn() async {
     final token = await getSavedToken();
-    return token != null;
+    if (token == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final loggedOut = prefs.getBool('isLoggedOut') ?? false;
+    return !loggedOut;
+  }
+
+  // ============================================================================
+  // LOGOUT / OFFLINE RESUME
+  // ============================================================================
+  // CHANGED — logout() no longer deletes the saved token/username/memberId.
+  // It only sets a flag marking the session as "logged out" in the UI. This
+  // lets someone log back in via resumeOfflineSession() below WITHOUT a
+  // network call, as long as it's the same device/cached session — important
+  // because the previous behavior (fully deleting the token) meant someone
+  // who logged out while offline had no way back into the app, even though
+  // all their downloaded lessons/videos/progress were still sitting on the
+  // device untouched.
+  //
+  // Tradeoff, by design: this means "Continue as {username}" on the login
+  // screen can resume a session without re-checking the password. Anyone
+  // with physical access to the device could do this. Acceptable here since
+  // account-sharing is already a policy matter (see FAQ), not something
+  // technically enforced.
+  // ============================================================================
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedOut', true);
+  }
+
+  // True if there's a cached session available to resume, regardless of
+  // whether it's currently marked logged-out. Used by the login screen to
+  // decide whether to show a "Continue as {username}" option.
+  Future<bool> hasCachedSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    final username = prefs.getString('username');
+    return token != null && username != null;
+  }
+
+  // Re-activates a cached session without any network call — this is what
+  // makes offline resume possible.
+  Future<void> resumeOfflineSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedOut', false);
   }
 
   // ---------- LESSONS ----------
@@ -106,10 +153,14 @@ class ApiService {
           'totalScoreStar': '0',
         },
       );
+      // ignore: avoid_print
+      print('DEBUG submitNounResult status=${response.statusCode} body=${response.body}');
       if (response.statusCode != 200) return false;
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
+      // ignore: avoid_print
+      print('DEBUG submitNounResult ERROR: $e');
       return false; // still offline - try again later
     }
   }
@@ -133,10 +184,14 @@ class ApiService {
           'totalScoreStar': '0',
         },
       );
+      // ignore: avoid_print
+      print('DEBUG submitGrammarResult status=${response.statusCode} body=${response.body}');
       if (response.statusCode != 200) return false;
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
+      // ignore: avoid_print
+      print('DEBUG submitGrammarResult ERROR: $e');
       return false;
     }
   }
@@ -170,12 +225,18 @@ class ApiService {
   Future<void> syncPendingResults() async {
     final token = await getSavedToken();
     if (token == null) {
+      // ignore: avoid_print
+      print('DEBUG syncPendingResults: no saved token, skipping sync');
       return; // not logged in - nothing to sync yet
     }
 
     final unsyncedNoun = await _localDb.getUnsyncedNounResults();
+    // ignore: avoid_print
+    print('DEBUG syncPendingResults: found ${unsyncedNoun.length} unsynced noun results');
     for (final row in unsyncedNoun) {
       final success = await _submitNounResult(row, token);
+      // ignore: avoid_print
+      print('DEBUG noun sync result for ${row['lessonGuid']}/${row['nounQuizType']}: $success');
       if (success) {
         await _localDb.markNounResultSynced(
           row['lessonGuid'] as String,
@@ -185,8 +246,12 @@ class ApiService {
     }
 
     final unsyncedGrammar = await _localDb.getUnsyncedGrammarResults();
+    // ignore: avoid_print
+    print('DEBUG syncPendingResults: found ${unsyncedGrammar.length} unsynced grammar results');
     for (final row in unsyncedGrammar) {
       final success = await _submitGrammarResult(row, token);
+      // ignore: avoid_print
+      print('DEBUG grammar sync result for ${row['lessonGuid']}/${row['quizType']}: $success');
       if (success) {
         await _localDb.markGrammarResultSynced(
           row['lessonGuid'] as String,
@@ -196,6 +261,8 @@ class ApiService {
     }
 
     final unsyncedOral = await _localDb.getUnsyncedOralPracticeResults();
+    // ignore: avoid_print
+    print('DEBUG syncPendingResults: found ${unsyncedOral.length} unsynced oral results');
     for (final row in unsyncedOral) {
       final success = await _submitOralResult(row, token);
       if (success) {
@@ -228,11 +295,15 @@ class ApiService {
     try {
       final response = await http.get(Uri.parse('$baseUrl/MobileApi/GetMyProgress?token=$token'));
       if (response.statusCode != 200) {
+        // ignore: avoid_print
+        print('DEBUG pullServerProgress: status=${response.statusCode}');
         return;
       }
 
       final data = jsonDecode(response.body);
       if (data['success'] != true) {
+        // ignore: avoid_print
+        print('DEBUG pullServerProgress: server returned success=false');
         return;
       }
 
@@ -251,6 +322,11 @@ class ApiService {
         }
       }
 
+      // ignore: avoid_print
+      print('DEBUG pullServerProgress: server returned ${(data['nounResults'] as List?)?.length ?? 0} noun, ${(data['grammarResults'] as List?)?.length ?? 0} grammar, ${(data['passedOralKeywordIds'] as List?)?.length ?? 0} oral');
+      // ignore: avoid_print
+      print('DEBUG pullServerProgress: locally cached lessonIds = ${lessons.map((l) => l.lessonId).toList()}');
+
       const nounTypeToHubKey = {
         'text/image': 'nounQuizTextImage',
         'text/audio': 'nounQuizTextAudio',
@@ -263,14 +339,21 @@ class ApiService {
         3: 'advanceQuiz',
       };
 
+      int mergedCount = 0;
+
       final nounResults = data['nounResults'] as List<dynamic>? ?? [];
       for (final r in nounResults) {
         final lessonGuid = lessonIdToGuid[r['lessonId']];
         final hubKey = nounTypeToHubKey[r['nounQuizType']];
         if (lessonGuid == null || hubKey == null) {
+          // ignore: avoid_print
+          print('DEBUG pullServerProgress: SKIPPED noun result lessonId=${r['lessonId']} nounQuizType=${r['nounQuizType']} (lessonGuid found=${lessonGuid != null}, hubKey found=${hubKey != null})');
           continue; // lesson not cached locally yet, or unrecognized type
         }
         await _localDb.savePendingResultIfBetter(lessonGuid, hubKey, (r['percentage'] as num).toDouble());
+        // ignore: avoid_print
+        print('DEBUG pullServerProgress: MERGED noun lessonId=${r['lessonId']} -> $hubKey = ${r['percentage']}%');
+        mergedCount++;
       }
 
       final grammarResults = data['grammarResults'] as List<dynamic>? ?? [];
@@ -279,6 +362,7 @@ class ApiService {
         final hubKey = grammarTypeIdToHubKey[r['quizTypeId']];
         if (lessonGuid == null || hubKey == null) continue;
         await _localDb.savePendingResultIfBetter(lessonGuid, hubKey, (r['percentage'] as num).toDouble());
+        mergedCount++;
       }
 
       final passedOralKeywordIds = data['passedOralKeywordIds'] as List<dynamic>? ?? [];
@@ -299,10 +383,14 @@ class ApiService {
         // Immediately mark it synced too, since this data literally came FROM
         // the server - pushing it right back up would be pointless.
         await _localDb.markOralPracticeResultSynced(info['lessonGuid']!, info['title']!);
+        mergedCount++;
       }
+
+      // ignore: avoid_print
+      print('DEBUG pullServerProgress: merged $mergedCount results from server');
     } catch (e) {
-      // silent failure - offline or server unreachable, caller has no
-      // dependency on this succeeding immediately
+      // ignore: avoid_print
+      print('DEBUG pullServerProgress ERROR: $e');
     }
   }
 }
