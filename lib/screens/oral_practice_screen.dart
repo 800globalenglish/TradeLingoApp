@@ -129,8 +129,10 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
       return;
     }
 
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/practice_recording.m4a';
+    final keyword = _items[_currentIndex];
+    final dir = await getApplicationDocumentsDirectory(); // NEW — persistent, not temp
+    final safeTitle = keyword.title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final path = '${dir.path}/oral_${widget.lesson.lessonGuid}_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
     await _recorder.start(const RecordConfig(), path: path);
     setState(() {
@@ -211,6 +213,7 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
       passed,
       keywordId: keyword.id,
       lessonId: widget.lesson.lessonId,
+      recordingPath: _recordingPath,
     );
 
     ApiService().syncPendingResults();
@@ -237,8 +240,8 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(ResourceStrings.instance.get('aiadd3955')),
-        content: Text(ResourceStrings.instance.get('aiadd3956')),
+        title: Text(ResourceStrings.instance.get('aiadd4063')),
+        content: Text(ResourceStrings.instance.get('aiadd4064')),
         actions: [
           TextButton(
             onPressed: () {

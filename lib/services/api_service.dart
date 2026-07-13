@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/lesson.dart';
 import 'local_db.dart';
+import 'dart:io';
 
 // TODO: replace with your real server address once the endpoints exist,
 // e.g. https://www.800globalenglish.com
@@ -198,6 +199,35 @@ class ApiService {
 
   Future<bool> _submitOralResult(Map<String, dynamic> row, String token) async {
     try {
+      String recordedFileName = (row['recordedFileName'] as String?) ?? '';
+
+      // Upload the recording first, if there is one and it hasn't been uploaded yet
+      final recordingPath = row['recordingPath'] as String?;
+      if (recordedFileName.isEmpty && recordingPath != null) {
+        final file = File(recordingPath);
+        if (await file.exists()) {
+          final uploadRequest = http.MultipartRequest(
+            'POST',
+            Uri.parse('$baseUrl/MobileApi/UploadRecording'),
+          );
+          uploadRequest.fields['token'] = token;
+          uploadRequest.files.add(await http.MultipartFile.fromPath('file', recordingPath));
+
+          final streamedResponse = await uploadRequest.send();
+          final uploadResponse = await http.Response.fromStream(streamedResponse);
+
+          if (uploadResponse.statusCode == 200) {
+            final uploadData = jsonDecode(uploadResponse.body);
+            if (uploadData['success'] == true) {
+              recordedFileName = uploadData['fileName'] as String;
+            }
+          }
+          // If upload fails, recordedFileName stays empty — we still submit the
+          // pass/fail below so progress isn't blocked, and retry the upload
+          // again on the next sync since the row won't be marked synced.
+        }
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/MobileApi/SubmitOralQuizResult'),
         body: {
@@ -205,10 +235,19 @@ class ApiService {
           'lessonId': (row['lessonId'] ?? 0).toString(),
           'keywordId': (row['keywordId'] ?? 0).toString(),
           'isPassed': (row['passed'] == 1).toString(),
+          'recordedFileName': recordedFileName,
         },
       );
       if (response.statusCode != 200) return false;
       final data = jsonDecode(response.body);
+      if (data['success'] == true && recordedFileName.isNotEmpty) {
+        // Clean up the local file now that it's safely on the server
+        final path = row['recordingPath'] as String?;
+        if (path != null) {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
+        }
+      }
       return data['success'] == true;
     } catch (e) {
       return false;

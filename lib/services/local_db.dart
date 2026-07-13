@@ -18,7 +18,7 @@ class LocalDb {
     String path = join(await getDatabasesPath(), '800_global_english.db');
     return await openDatabase(
       path,
-      version: 8, // bumped - added lessonId + server-type columns needed for sync
+      version: 9, // CHANGED — was 8, bumped for oral recording upload columns
       onCreate: (db, version) async {
         await _createSchema(db);
       },
@@ -32,16 +32,9 @@ class LocalDb {
           await _createSchema(db);
         }
         if (oldVersion < 6) {
-          // New tables only - does NOT touch lessons, downloads, oral practice,
-          // or pending_quiz_results, so nothing else gets wiped on upgrade.
           await _createDetailedResultTables(db);
         }
         if (oldVersion < 7) {
-          // lessons table gained a lessonId column - drop and let it re-cache
-          // from the server next time (same pattern used for earlier lessons
-          // schema changes above). Existing installs already have
-          // oral_practice_results without keywordId - ALTER TABLE adds it
-          // without losing any saved practice data.
           await db.execute('DROP TABLE IF EXISTS lessons');
           await _createSchema(db);
           try {
@@ -51,15 +44,25 @@ class LocalDb {
           }
         }
         if (oldVersion < 8) {
-          // Needed for the sync step: the integer lessonId (not just guid),
-          // plus the exact server-expected type values, stored directly at
-          // save time so sync never has to guess/translate anything.
           for (final stmt in [
             'ALTER TABLE detailed_noun_quiz_results ADD COLUMN lessonId INTEGER',
             'ALTER TABLE detailed_noun_quiz_results ADD COLUMN apiNounQuizType TEXT',
             'ALTER TABLE detailed_grammar_quiz_results ADD COLUMN lessonId INTEGER',
             'ALTER TABLE detailed_grammar_quiz_results ADD COLUMN apiQuizTypeId INTEGER',
             'ALTER TABLE oral_practice_results ADD COLUMN lessonId INTEGER',
+          ]) {
+            try {
+              await db.execute(stmt);
+            } catch (e) {
+              // ignore: column may already exist on fresh installs
+            }
+          }
+        }
+        if (oldVersion < 9) {
+          // NEW — oral recording upload support
+          for (final stmt in [
+            'ALTER TABLE oral_practice_results ADD COLUMN recordingPath TEXT',
+            'ALTER TABLE oral_practice_results ADD COLUMN recordedFileName TEXT',
           ]) {
             try {
               await db.execute(stmt);
@@ -101,6 +104,8 @@ class LocalDb {
     lessonId INTEGER,
     passed INTEGER,
     synced INTEGER DEFAULT 0,
+    recordingPath TEXT,
+    recordedFileName TEXT,
     PRIMARY KEY (lessonGuid, itemKey)
   )
 ''');
@@ -437,7 +442,8 @@ class LocalDb {
 
   // ---------- ORAL PRACTICE RESULTS ----------
 
-  Future<void> saveOralPracticeResult(String lessonGuid, String itemKey, bool passed, {int keywordId = 0, int lessonId = 0}) async {
+  Future<void> saveOralPracticeResult(String lessonGuid, String itemKey, bool passed,
+      {int keywordId = 0, int lessonId = 0, String? recordingPath}) async {
     final db = await database;
     await db.insert(
       'oral_practice_results',
@@ -448,6 +454,8 @@ class LocalDb {
         'lessonId': lessonId,
         'passed': passed ? 1 : 0,
         'synced': 0,
+        'recordingPath': recordingPath,
+        'recordedFileName': null,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );

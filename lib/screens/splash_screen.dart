@@ -274,7 +274,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: TextButton.icon(
                   icon: const Icon(Icons.link, color: Colors.white70, size: 18),
                   label: Text(
-                    ResourceStrings.instance.get('aiadd2626'),
+                    ResourceStrings.instance.get('aiadd2597'),
                     style: const TextStyle(color: Colors.white70),
                   ),
                   onPressed: _copyShareLink,

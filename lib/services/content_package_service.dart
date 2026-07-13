@@ -244,6 +244,7 @@ class ContentPackageService {
       onStatus?.call('done');
       return true;
     } catch (e) {
+      print('DEBUG downloadAndExtract failed: $e'); // NEW - temporary
       // NEW — clean up any incomplete temp extraction so it doesn't linger
       // as orphaned partial data taking up storage.
       try {
@@ -270,9 +271,6 @@ class ContentPackageService {
     } else if (remoteUrl.contains('/content/media/sounds/lessons48/')) {
       final filename = remoteUrl.split('/').last;
       relativePath = 'sounds/lesson48/$filename';
-    } else if (remoteUrl.contains('/content/media/sounds/LessonNoun/')) {
-      final filename = remoteUrl.split('/').last;
-      relativePath = 'sounds/LessonNoun/$filename';
     }
 
     if (relativePath == null) return null;

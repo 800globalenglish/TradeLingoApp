@@ -13,10 +13,6 @@ const String lessonNounAudioBaseUrl =
 String _resolveAudioUrl(String filename) {
   final trimmed = filename.trim();
 
-  final isNounGuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.mp3$')
-      .hasMatch(trimmed);
-  if (isNounGuid) return lessonNounAudioBaseUrl + trimmed;
-
   // Supplemental sentence audio (e.g. "o001_01.mp3") lives on a different
   // CDN host than the regular word/sentence audio.
   final isSupplementalSentence = RegExp(r'^[a-zA-Z]\d{3}_\d{2}\.mp3$').hasMatch(trimmed);
@@ -116,12 +112,14 @@ class NounQuizOption {
   });
 
   factory NounQuizOption.fromJson(Map<String, dynamic> json) {
+    final resolvedAudio = _resolveAudioUrl(json['audio'] ?? '');
+    print('DEBUG noun quiz audio resolved to: $resolvedAudio'); // NEW - temporary, remove after testing
     return NounQuizOption(
       optionId: json['optionId'] ?? 0,
       nounId: json['nounId'] ?? 0,
       word: json['word'] ?? '',
       imageUrl: imageBaseUrl + (json['image'] ?? '').toString().trim(),
-      audioUrl: _resolveAudioUrl(json['audio'] ?? ''),
+      audioUrl: resolvedAudio,
       isCorrect: json['isCorrect'] ?? false,
     );
   }
