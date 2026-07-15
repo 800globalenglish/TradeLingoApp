@@ -14,7 +14,7 @@ plugins {
 }
 
 android {
-    namespace = "com.globalenglish800.speak"
+    namespace = "com.globalenglish800.tradelingo"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -24,7 +24,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.globalenglish800.speak"
+        applicationId = "com.globalenglish800.tradelingo"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
