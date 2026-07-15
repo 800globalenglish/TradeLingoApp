@@ -1,19 +1,8 @@
-// ============================================================================
-// login_screen.dart — ONE ADDITION
-// ============================================================================
-// After a successful login, kicks off syncPendingResults() in the background
-// (not awaited — login navigation proceeds immediately, sync just runs
-// quietly). Safe to call every login: it only sends rows still marked
-// unsynced, so nothing gets sent twice.
-// Everything else in this file is UNCHANGED from your original.
-// ============================================================================
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/resource_strings.dart';
 import 'splash_screen.dart';
-import 'download_manager_screen.dart';
 import 'welcome_download_screen.dart';
 import 'welcome_wizard_screen.dart';
 import '../widgets/app_header.dart';
@@ -33,7 +22,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  // NEW — for offline resume
   bool _checkingSession = true;
   String? _cachedUsername;
 
@@ -43,8 +31,8 @@ class _LoginScreenState extends State<LoginScreen> {
     _checkForCachedSession();
   }
 
-  // NEW — checks whether there's a previous session on this device that
-  // can be resumed without a network call.
+  // Checks whether there's a previous session on this device that can be
+  // resumed without a network call.
   Future<void> _checkForCachedSession() async {
     final hasCached = await _api.hasCachedSession();
     final username = hasCached ? await _api.getSavedUsername() : null;
@@ -55,16 +43,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  // NEW — resumes a cached session with no network call at all.
+  // Resumes a cached session with no network call at all.
   Future<void> _handleResumeSession() async {
     await _api.resumeOfflineSession();
     if (!mounted) return;
-
-    // Sync/pull attempts are safe to fire even offline - they fail silently
-    // and retry later via the app's other sync trigger points.
-    _api.syncPendingResults();
-    _api.pullServerProgress();
-
     await _navigateAfterLogin();
   }
 
@@ -83,17 +65,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (success) {
       if (!mounted) return;
-
-      // NEW — fire-and-forget: pushes any locally-saved quiz/oral results up
-      // to the server now that we have a fresh valid token. Not awaited, so
-      // it doesn't delay the screen transition below.
-      _api.syncPendingResults();
-
-      // NEW — fire-and-forget: pulls down any results the member already has
-      // on the server (e.g. from the website) and merges them into local
-      // hub scores/oral pass status.
-      _api.pullServerProgress();
-
       await _navigateAfterLogin();
     } else {
       setState(() {
@@ -102,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // NEW — shared by both a real login and an offline session resume, so the
+  // Shared by both a real login and an offline session resume, so the
   // onboarding/routing logic only lives in one place.
   Future<void> _navigateAfterLogin() async {
     if (!mounted) return;
@@ -116,17 +87,9 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final hasSeenVideoOnboarding = prefs.getBool('hasSeenVideoOnboarding') ?? false;
-
-    if (!hasSeenVideoOnboarding) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DownloadManagerScreen(isOnboarding: true)),
-      );
-    } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const SplashScreen()),
-      );
-    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const SplashScreen()),
+    );
   }
 
   @override
@@ -139,11 +102,9 @@ class _LoginScreenState extends State<LoginScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
-            // FIXED — was Navigator.of(context).pop(), which just went back
-            // to whatever screen happened to push Login. Now always lands on
-            // the Choose Language screen specifically, with the whole stack
-            // reset beneath it — so there's nothing left to "pop" to if the
-            // person then hits back again on THAT screen.
+            // Always lands on the Choose Language screen specifically, with
+            // the whole stack reset beneath it — so there's nothing left to
+            // "pop" to if the person then hits back again on THAT screen.
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(builder: (_) => const WelcomeWizardScreen()),
                   (route) => false,
@@ -159,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const AppHeader(height: 60),
               const SizedBox(height: 32),
-              // NEW — offline resume option, shown only if a cached session exists
+              // Offline resume option, shown only if a cached session exists
               if (_checkingSession)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 16),

@@ -4,7 +4,6 @@ import '../services/content_package_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/resource_strings.dart';
 import 'splash_screen.dart';
-import 'download_manager_screen.dart';
 
 class WelcomeDownloadScreen extends StatefulWidget {
   const WelcomeDownloadScreen({super.key});
@@ -59,13 +58,13 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
         return ResourceStrings.instance.get('aiadd4016');
       case 'extracting':
         return ResourceStrings.instance.get('aiadd3933');
-      case 'downloading_sounds': // NEW
+      case 'downloading_sounds':
         return ResourceStrings.instance.get('aiadd4077');
-      case 'extracting_sounds': // NEW
+      case 'extracting_sounds':
         return ResourceStrings.instance.get('aiadd4078');
-      case 'downloading_images': // NEW
+      case 'downloading_images':
         return ResourceStrings.instance.get('aiadd4079');
-      case 'extracting_images': // NEW
+      case 'extracting_images':
         return ResourceStrings.instance.get('aiadd4080');
       default:
         return '';
@@ -123,23 +122,18 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
     });
   }
 
+  // CHANGED — used to route into DownloadManagerScreen's video-lesson
+  // onboarding (now deleted). For TradeLingo there's no separate onboarding
+  // step after this — just go straight to the home screen (industry picker).
   Future<void> _continueAfterDownload() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSeenWelcomeContentDownload', true);
 
-    final hasSeenVideoOnboarding = prefs.getBool('hasSeenVideoOnboarding') ?? false;
-
     if (!mounted) return;
 
-    if (!hasSeenVideoOnboarding) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DownloadManagerScreen(isOnboarding: true)),
-      );
-    } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const SplashScreen()),
-      );
-    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const SplashScreen()),
+    );
   }
 
   @override

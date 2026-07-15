@@ -1,18 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'lesson_list_screen.dart';
-import 'pdf_list_screen.dart';
-import 'download_manager_screen.dart';
 import 'content_download_screen.dart';
 import '../services/languages.dart';
 import '../services/api_service.dart';
-import '../services/local_db.dart';
 import '../widgets/app_header.dart';
 import '../services/content_package_service.dart';
 import '../services/resource_strings.dart';
 import 'help_screen.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -23,15 +18,11 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   String _selectedLanguage = 'en-US';
-  // NEW — the dropdown's current pick, which may differ from _selectedLanguage
+  // The dropdown's current pick, which may differ from _selectedLanguage
   // until the person actually confirms it with the arrow button.
   String _pendingLanguage = 'en-US';
   String? _username;
-  bool _showOfflineContentButton = true;
   bool _isConfirmingLanguage = false;
-
-  // NEW — tracks which languages already have lesson content cached locally
-  Set<String> _downloadedLanguages = {};
 
   final Map<String, String> _languages = appLanguages;
 
@@ -40,36 +31,6 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     _loadSavedLanguage();
     _loadUsername();
-    _checkOfflineContentStatus();
-    _loadDownloadedLanguages(); // NEW
-  }
-
-  // NEW — checks each language's local cache to see which ones already have lessons saved
-  Future<void> _loadDownloadedLanguages() async {
-    final downloaded = <String>{};
-    for (final code in _languages.keys) {
-      final lessons = await LocalDb.instance.getAllLessons(code);
-      if (lessons.isNotEmpty) {
-        downloaded.add(code);
-      }
-    }
-    if (mounted) {
-      setState(() => _downloadedLanguages = downloaded);
-    }
-  }
-
-  Future<void> _checkOfflineContentStatus() async {
-    final service = ContentPackageService.instance;
-
-    if (!service.isContentAvailableLocally) {
-      // Never downloaded yet - definitely show the button
-      if (mounted) setState(() => _showOfflineContentButton = true);
-      return;
-    }
-
-    // Already downloaded - only show the button again if a newer version exists
-    final updateAvailable = await service.isUpdateAvailable();
-    if (mounted) setState(() => _showOfflineContentButton = updateAvailable);
   }
 
   Future<void> _loadUsername() async {
@@ -86,50 +47,20 @@ class _SplashScreenState extends State<SplashScreen> {
     });
   }
 
-  // NEW — actually applies the pending language: saves it, reloads UI text,
-  // and pre-fetches/caches that language's lesson list right away (while
-  // online), so switching to a brand-new language and going offline
-  // afterward doesn't leave the person stuck with an empty lesson list and
-  // no explanation.
+  // Applies the pending language: saves it and reloads UI text. Unlike the
+  // original app, there's no per-language lesson content to pre-fetch here —
+  // word/image data for TradeLingo is fetched per-industry via
+  // GetResourceTree when someone actually opens an industry, not tied to
+  // this language switcher.
   Future<void> _confirmLanguageChange() async {
     if (_pendingLanguage == _selectedLanguage) return; // nothing changed
 
     final code = _pendingLanguage;
-
-    // NEW — only block the switch if this language ISN'T already downloaded.
-    // A language with cached lessons/resource strings can switch to safely
-    // offline; only a brand-new, never-downloaded language actually needs
-    // a live connection to fetch anything.
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOffline = connectivityResult.contains(ConnectivityResult.none) || connectivityResult.isEmpty;
-    if (isOffline && !_downloadedLanguages.contains(code)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ResourceStrings.instance.get('aiadd4076'))),
-      );
-      return;
-    }
-
     setState(() => _isConfirmingLanguage = true);
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selectedLanguage', code);
-    await ResourceStrings.instance.load(code); // already falls back to cache gracefully when offline
-
-    // Pre-fetch this language's lessons now, while we know we're online
-    // (the person just interacted with the app). If offline but the
-    // language is already downloaded, this simply does nothing new -
-    // the existing local cache is used as-is.
-    try {
-      final serverLessons = await ApiService().fetchLessonsFromServer();
-      if (serverLessons != null) {
-        await LocalDb.instance.saveLessons(serverLessons, code);
-      }
-    } catch (e) {
-      // ignore - lesson list screen handles the offline case on its own
-    }
-
-    await _loadDownloadedLanguages();
+    await ResourceStrings.instance.load(code); // falls back to cache gracefully when offline
 
     if (!mounted) return;
     setState(() {
@@ -142,7 +73,7 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 
-  // NEW — builds the personal subdomain link and copies it to the clipboard.
+  // Builds the personal subdomain link and copies it to the clipboard.
   Future<void> _copyShareLink() async {
     if (_username == null) return;
     final link = 'https://$_username.800globalenglish.com';
@@ -179,7 +110,7 @@ class _SplashScreenState extends State<SplashScreen> {
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
-                        child: Column( // CHANGED — was Row directly; wrapped in Column so we can add loading text below
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Row(
@@ -198,16 +129,7 @@ class _SplashScreenState extends State<SplashScreen> {
                                     items: _languages.entries
                                         .map((e) => DropdownMenuItem(
                                       value: e.key,
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text('${appLanguageFlags[e.key] ?? ''}  ${e.value}'),
-                                          if (_downloadedLanguages.contains(e.key)) ...[
-                                            const SizedBox(width: 6),
-                                            const Icon(Icons.check_circle, size: 16, color: Colors.green),
-                                          ],
-                                        ],
-                                      ),
+                                      child: Text('${appLanguageFlags[e.key] ?? ''}  ${e.value}'),
                                     ))
                                         .toList(),
                                     onChanged: (code) {
@@ -216,11 +138,6 @@ class _SplashScreenState extends State<SplashScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                // NEW — explicit confirm button. Only enabled once a
-                                // DIFFERENT language is actually picked, so it's
-                                // clear something needs to happen, and tapping it
-                                // gives visible feedback (spinner, then a snackbar)
-                                // instead of the previous silent instant-switch.
                                 if (_isConfirmingLanguage)
                                   const Padding(
                                     padding: EdgeInsets.all(8),
@@ -238,7 +155,6 @@ class _SplashScreenState extends State<SplashScreen> {
                                   ),
                               ],
                             ),
-                            // NEW — shown only while the new language is loading
                             if (_isConfirmingLanguage)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
@@ -250,16 +166,25 @@ class _SplashScreenState extends State<SplashScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32), // CHANGED — removed the accidental duplicate of this line
+                      const SizedBox(height: 32),
+                      // ---------------------------------------------------
+                      // PLACEHOLDER — industry picker.
+                      // These two buttons stand in for "Restaurant/Household"
+                      // and "Construction/General". Right now they both just
+                      // open the same ContentDownloadScreen. Once that screen
+                      // is adapted to accept a pageId (1 or 2) and point at
+                      // the matching zip/GetResourceTree call, wire each
+                      // button to its own industry here.
+                      // ---------------------------------------------------
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          icon: const Icon(Icons.menu_book),
-                          label: Text(ResourceStrings.instance.get('aiadd1437')),
+                          icon: const Icon(Icons.restaurant),
+                          label: const Text('Restaurant / Household'),
                           style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
                           onPressed: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const LessonListScreen()),
+                              MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
                             );
                           },
                         ),
@@ -268,46 +193,16 @@ class _SplashScreenState extends State<SplashScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          icon: const Icon(Icons.picture_as_pdf),
-                          label: Text(ResourceStrings.instance.get('aiadd3971')),
+                          icon: const Icon(Icons.construction),
+                          label: const Text('Construction / General'),
                           style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
                           onPressed: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const PdfListScreen()),
+                              MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
                             );
                           },
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.download),
-                          label: Text(ResourceStrings.instance.get('aiadd3934')),
-                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const DownloadManagerScreen()),
-                            );
-                          },
-                        ),
-                      ),
-                      if (_showOfflineContentButton) ...[
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.offline_bolt),
-                            label: Text(ResourceStrings.instance.get('aiadd3932')),
-                            style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 32),
                       Center(
                         child: ElevatedButton.icon(
@@ -328,7 +223,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
             ),
-            // NEW — footer with the share-link action, only shown once we know the username
+            // Footer with the share-link action, only shown once we know the username
             if (_username != null)
               Container(
                 width: double.infinity,

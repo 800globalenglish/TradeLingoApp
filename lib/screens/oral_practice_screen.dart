@@ -3,16 +3,49 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
-import '../models/lesson.dart';
-import '../services/local_db.dart';
-import '../services/api_service.dart';
-import '../services/content_package_service.dart';
 import '../services/resource_strings.dart';
 import '../widgets/smart_image.dart';
 
+// ============================================================================
+// CHANGED FROM ORIGINAL — this screen used to take a Lesson and loop through
+// lesson.keywords, saving pass/fail to LocalDb and pushing results to the
+// server via ApiService.syncPendingResults(). None of that exists anymore:
+//
+//   - Lesson/Keyword models are gone (lesson-specific, removed)
+//   - LocalDb is gone (was entirely quiz/lesson sync tables)
+//   - Recordings stay on the phone only — no upload, no server sync call
+//
+// Instead this screen now takes a plain list of word items — the same shape
+// GetResourceTree returns for a category's words: title, imageUrl, audioUrl.
+// Pass/fail no longer persists between sessions (no LocalDb to store it in);
+// self-grading here just moves to the next word in THIS session. If you want
+// "don't show me words I've already passed" to persist across app restarts
+// later, that would need a small new local store — much simpler than the
+// old LocalDb, just a set of passed titles per category, but intentionally
+// left out for now to keep this rebuild focused.
+// ============================================================================
+
+class PracticeWordItem {
+  final String title;
+  final String imageUrl; // filename, e.g. "02_01_01_01_01.jpg"
+  final String audioUrl; // filename, e.g. "02_01_01_01_01.mp3" (native pronunciation)
+
+  const PracticeWordItem({
+    required this.title,
+    required this.imageUrl,
+    required this.audioUrl,
+  });
+}
+
 class OralPracticeScreen extends StatefulWidget {
-  final Lesson lesson;
-  const OralPracticeScreen({super.key, required this.lesson});
+  final String categoryTitle;
+  final List<PracticeWordItem> items;
+
+  const OralPracticeScreen({
+    super.key,
+    required this.categoryTitle,
+    required this.items,
+  });
 
   @override
   State<OralPracticeScreen> createState() => _OralPracticeScreenState();
@@ -22,10 +55,7 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
   final AudioPlayer _myRecordingPlayer = AudioPlayer();
   final AudioPlayer _nativePlayer = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
-  final LocalDb _localDb = LocalDb.instance;
 
-  List<Keyword> _items = [];
-  bool _loading = true;
   int _currentIndex = 0;
   bool _isRecording = false;
   bool _hasRecording = false;
@@ -35,33 +65,6 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
   bool _isPaused = false;
 
   Completer<void>? _activePlaybackCompleter;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadItems();
-  }
-
-  Future<void> _loadItems({bool includeAll = false}) async {
-    setState(() => _loading = true);
-
-    List<Keyword> items = widget.lesson.keywords;
-    if (!includeAll) {
-      final passedKeys = await _localDb.getPassedItemKeys(widget.lesson.lessonGuid);
-      items = widget.lesson.keywords.where((k) => !passedKeys.contains(k.title)).toList();
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _items = items;
-      _currentIndex = 0;
-      _hasRecording = false;
-      _recordingPath = null;
-      _isComparing = false;
-      _isPaused = false;
-      _loading = false;
-    });
-  }
 
   @override
   void dispose() {
@@ -97,23 +100,24 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
     await _playAndWait(_myRecordingPlayer, DeviceFileSource(_recordingPath!));
   }
 
+  // TODO — once content_package_service.dart is adapted for TradeLingo's
+  // flat images/sounds folders, resolve the local cached file here first
+  // (same pattern as before: check local cache, fall back to CDN URL).
+  // For now this always plays directly from the CDN.
+  String _nativeAudioUrl(PracticeWordItem item) {
+    return 'https://cdn.800globalenglish.com/content/tradelingo/restaurant/sounds/${item.audioUrl}';
+  }
+
   Future<void> _playNativeAndWait() async {
-    final keyword = _items[_currentIndex];
-    final localPath = await ContentPackageService.instance.resolveLocalPath(keyword.audioUrl);
-    final source = localPath != null ? DeviceFileSource(localPath) : UrlSource(keyword.audioUrl);
-    await _playAndWait(_nativePlayer, source);
+    final item = widget.items[_currentIndex];
+    await _playAndWait(_nativePlayer, UrlSource(_nativeAudioUrl(item)));
   }
 
   Future<void> _playNativeAudio() async {
-    final keyword = _items[_currentIndex];
-    final localPath = await ContentPackageService.instance.resolveLocalPath(keyword.audioUrl);
+    final item = widget.items[_currentIndex];
     try {
       await _nativePlayer.stop();
-      if (localPath != null) {
-        await _nativePlayer.play(DeviceFileSource(localPath));
-      } else {
-        await _nativePlayer.play(UrlSource(keyword.audioUrl));
-      }
+      await _nativePlayer.play(UrlSource(_nativeAudioUrl(item)));
     } catch (e) {
       // ignore
     }
@@ -129,10 +133,10 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
       return;
     }
 
-    final keyword = _items[_currentIndex];
-    final dir = await getApplicationDocumentsDirectory(); // NEW — persistent, not temp
-    final safeTitle = keyword.title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-    final path = '${dir.path}/oral_${widget.lesson.lessonGuid}_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final item = widget.items[_currentIndex];
+    final dir = await getApplicationDocumentsDirectory(); // persistent, not temp
+    final safeTitle = item.title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final path = '${dir.path}/tradelingo_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
     await _recorder.start(const RecordConfig(), path: path);
     setState(() {
@@ -204,25 +208,17 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
     }
   }
 
+  // Self-grading no longer saves anywhere — it's just "am I happy with this,
+  // move on" for this session. The recording itself stays on disk at
+  // _recordingPath regardless of pass/fail (nothing deletes it), so it's
+  // still there if you want to build a "my recordings" playback list later.
   Future<void> _selfGrade(bool passed) async {
     await _stopComparisonLoop();
-    final keyword = _items[_currentIndex];
-    await _localDb.saveOralPracticeResult(
-      widget.lesson.lessonGuid,
-      keyword.title,
-      passed,
-      keywordId: keyword.id,
-      lessonId: widget.lesson.lessonId,
-      recordingPath: _recordingPath,
-    );
-
-    ApiService().syncPendingResults();
-
     _nextItem();
   }
 
   void _nextItem() {
-    if (_currentIndex < _items.length - 1) {
+    if (_currentIndex < widget.items.length - 1) {
       setState(() {
         _currentIndex++;
         _hasRecording = false;
@@ -257,75 +253,25 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // CHANGED — all AppBars in this screen now show "Lesson N" for consistency
-    // with the other quiz screens, instead of a generic "Oral Practice" title.
-    if (_loading) {
+    if (widget.items.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text('Lesson ${widget.lesson.lessonNumber}')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (widget.lesson.keywords.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: Text('Lesson ${widget.lesson.lessonNumber}')),
+        appBar: AppBar(title: Text(widget.categoryTitle)),
         body: Center(child: Text(ResourceStrings.instance.get('aiadd3958'))),
       );
     }
 
-    if (_items.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: Text('Lesson ${widget.lesson.lessonNumber}')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  ResourceStrings.instance.get('aiadd1452'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                const Icon(Icons.check_circle, size: 64, color: Colors.green),
-                const SizedBox(height: 16),
-                Text(
-                  ResourceStrings.instance.get('aiadd3960'),
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  ResourceStrings.instance.get('aiadd3959'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () => _loadItems(includeAll: true),
-                  child: Text(ResourceStrings.instance.get('aiadd3961')),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final keyword = _items[_currentIndex];
+    final item = widget.items[_currentIndex];
 
     return Scaffold(
-      // CHANGED — was: Text('${aiadd3962} ${_currentIndex + 1} ${aiadd3963} ${_items.length}')
-      appBar: AppBar(title: Text('Lesson ${widget.lesson.lessonNumber}')),
+      appBar: AppBar(title: Text(widget.categoryTitle)),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // NEW — word progress moved here, above the existing heading
               Text(
-                '${ResourceStrings.instance.get('aiadd3962')} ${_currentIndex + 1} ${ResourceStrings.instance.get('aiadd3963')} ${_items.length}',
+                '${ResourceStrings.instance.get('aiadd3962')} ${_currentIndex + 1} ${ResourceStrings.instance.get('aiadd3963')} ${widget.items.length}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 14, color: Colors.grey),
               ),
@@ -336,15 +282,19 @@ class _OralPracticeScreenState extends State<OralPracticeScreen> {
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
-              if (keyword.imageUrl.isNotEmpty)
+              if (item.imageUrl.isNotEmpty)
                 SizedBox(
                   height: 150,
-                  child: SmartImage(url: keyword.imageUrl, height: 150),
+                  child: SmartImage(
+                    url: 'https://cdn.800globalenglish.com/content/tradelingo/images/${item.imageUrl}',
+                    height: 150,
+                  ),
                 ),
               const SizedBox(height: 16),
               Text(
-                keyword.title,
+                item.title,
                 style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
 
