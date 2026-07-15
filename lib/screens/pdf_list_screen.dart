@@ -58,9 +58,41 @@ class _PdfListScreenState extends State<PdfListScreen> {
   }
 
   Future<void> _openPdf(String url) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              ResourceStrings.instance.get('aiadd4082'),
+              style: const TextStyle(color: Colors.black87),
+            ),
+          ],
+        ),
+      ),
+    );
+
     final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) {
-      if (!mounted) return;
+
+    // NEW — run the actual launch AND a minimum visible delay together, so
+    // our overlay shows for at least a moment even though launchUrl itself
+    // returns almost instantly (as soon as the browser view opens, not when
+    // the PDF finishes loading) - otherwise the dialog pops before anyone
+    // can actually perceive it.
+    final results = await Future.wait([
+      launchUrl(uri, mode: LaunchMode.inAppBrowserView),
+      Future.delayed(const Duration(milliseconds: 800)),
+    ]);
+    final success = results[0] as bool;
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(ResourceStrings.instance.get('aiadd3970'))),
       );
@@ -72,7 +104,19 @@ class _PdfListScreenState extends State<PdfListScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(ResourceStrings.instance.get('aiadd3971'))),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              ResourceStrings.instance.get('aiadd4082'),
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      )
           : Column(
         children: [
           if (_showHint)

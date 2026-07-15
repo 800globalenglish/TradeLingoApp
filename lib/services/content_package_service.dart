@@ -22,7 +22,15 @@ const String freeVersionUrl = 'https://cdn.800globalenglish.com/content/mobileZi
 const String freeZipUrl = 'https://cdn.800globalenglish.com/content/mobileZip/content-package-free.zip';
 
 const String fullVersionUrl = 'https://cdn.800globalenglish.com/content/mobileZip/version.txt';
-const String fullZipUrl = 'https://cdn.800globalenglish.com/content/mobileZip/content-package.zip';
+
+// NEW — the full/paid package is split into two smaller zips instead of one
+// large one. A single ~38MB zip was intermittently getting corrupted or
+// truncated during upload through the CDN's browser dashboard; splitting
+// sounds and images into their own files keeps each upload well under
+// whatever size threshold was causing that. The free package was never
+// affected and stays a single zip, unchanged.
+const String fullSoundsZipUrl = 'https://cdn.800globalenglish.com/content/mobileZip/sounds.zip';
+const String fullImagesZipUrl = 'https://cdn.800globalenglish.com/content/mobileZip/images.zip';
 
 class DownloadProgress {
   final int bytesReceived;
@@ -88,12 +96,22 @@ class ContentPackageService {
     }
   }
 
+  // CHANGED — for the paid tier this now sums BOTH zip files' sizes, since
+  // the full package is downloaded as two separate files.
   Future<int?> getRemoteZipSizeBytes({required bool isPaid}) async {
     try {
-      final url = isPaid ? fullZipUrl : freeZipUrl;
-      final response = await http.head(Uri.parse(url));
-      final contentLength = response.headers['content-length'];
-      return contentLength != null ? int.tryParse(contentLength) : null;
+      if (!isPaid) {
+        final response = await http.head(Uri.parse(freeZipUrl));
+        final contentLength = response.headers['content-length'];
+        return contentLength != null ? int.tryParse(contentLength) : null;
+      }
+
+      final soundsResponse = await http.head(Uri.parse(fullSoundsZipUrl));
+      final imagesResponse = await http.head(Uri.parse(fullImagesZipUrl));
+      final soundsLength = int.tryParse(soundsResponse.headers['content-length'] ?? '');
+      final imagesLength = int.tryParse(imagesResponse.headers['content-length'] ?? '');
+      if (soundsLength == null || imagesLength == null) return null;
+      return soundsLength + imagesLength;
     } catch (e) {
       return null;
     }
@@ -128,13 +146,44 @@ class ContentPackageService {
     }
   }
 
+  // Public entry point wraps the real attempt in a retry loop. A large
+  // download over a flaky connection (or, as we found, a large upload that
+  // never landed cleanly on the CDN) can produce a corrupted/truncated zip
+  // that only reveals itself once we try to decode it. Rather than making
+  // the person notice "failed" and manually tap the button again, we detect
+  // that specific failure ourselves and silently retry once before giving
+  // up for real.
   Future<bool> downloadAndExtract({
     void Function(DownloadProgress progress)? onDownloadProgress,
     void Function(String status)? onStatus,
     int? knownTotalBytes,
   }) async {
-    // NEW — tracked outside the try block so the catch handler below can
-    // clean it up if extraction fails partway through.
+    const maxAttempts = 2;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      final result = await _downloadAndExtractOnce(
+        onDownloadProgress: onDownloadProgress,
+        onStatus: onStatus,
+        knownTotalBytes: knownTotalBytes,
+      );
+
+      if (result) return true;
+
+      if (attempt < maxAttempts) {
+        // ignore: avoid_print
+        print('DEBUG downloadAndExtract: attempt $attempt failed, retrying...');
+        onStatus?.call('retrying');
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _downloadAndExtractOnce({
+    void Function(DownloadProgress progress)? onDownloadProgress,
+    void Function(String status)? onStatus,
+    int? knownTotalBytes,
+  }) async {
+    // Tracked outside the try block so the catch handler below can clean it
+    // up if extraction fails partway through.
     Directory? tempDir;
 
     try {
@@ -142,71 +191,9 @@ class ContentPackageService {
       final isPaidResult = await checkIsPaidNow();
       final prefs = await SharedPreferences.getInstance();
       final downloadedTier = prefs.getString('contentPackageTier');
-      // FIXED — fall back to last known tier if status couldn't be verified,
-      // instead of silently downloading the free package for a paid member.
       final isPaid = isPaidResult ?? (downloadedTier == 'full');
-      final zipUrl = isPaid ? fullZipUrl : freeZipUrl;
       final versionUrl = isPaid ? fullVersionUrl : freeVersionUrl;
 
-      onStatus?.call('downloading');
-
-      final request = http.Request('GET', Uri.parse(zipUrl));
-      final client = http.Client();
-      final streamedResponse = await client.send(request);
-
-      if (streamedResponse.statusCode != 200) {
-        client.close();
-        return false;
-      }
-
-      final totalBytes = streamedResponse.contentLength ?? knownTotalBytes ?? 0;
-      final bytesBuilder = BytesBuilder(copy: false);
-      int bytesReceived = 0;
-
-      final stopwatch = Stopwatch()..start();
-
-      await for (final chunk in streamedResponse.stream) {
-        bytesBuilder.add(chunk);
-        bytesReceived += chunk.length;
-
-        final elapsedSeconds = stopwatch.elapsedMilliseconds / 1000.0;
-        double? estimatedRemaining;
-        if (elapsedSeconds > 0.5 && bytesReceived > 0 && totalBytes > 0) {
-          final bytesPerSecond = bytesReceived / elapsedSeconds;
-          final remainingBytes = totalBytes - bytesReceived;
-          estimatedRemaining = remainingBytes / bytesPerSecond;
-        }
-
-        final progress = DownloadProgress(
-          bytesReceived: bytesReceived,
-          totalBytes: totalBytes,
-          estimatedSecondsRemaining: estimatedRemaining,
-        );
-// ignore: avoid_print
-        print('DEBUG progress: received=$bytesReceived total=$totalBytes percent=${progress.percent}');
-        onDownloadProgress?.call(progress);
-      }
-
-      client.close();
-      stopwatch.stop();
-
-      onStatus?.call('extracting');
-      final zipBytes = bytesBuilder.takeBytes();
-      final archive = ZipDecoder().decodeBytes(zipBytes);
-
-      // FIXED — atomic swap. Previously this deleted the OLD content
-      // directory before writing any new files, so if the download or
-      // extraction failed partway through (network drop, app killed,
-      // interrupted rebuild, etc.), the old working content was already
-      // gone AND contentPackageDownloaded never got reset to false — so
-      // the app kept reporting "up to date" while images/audio were
-      // actually missing or incomplete.
-      //
-      // Now: extract into a temporary folder first. Only once EVERY file
-      // has been written successfully do we delete the old folder and
-      // rename the temp one into its place. If anything throws before
-      // that point, the old content is never touched, and the catch
-      // block below cleans up the incomplete temp folder.
       final baseDir = await getApplicationSupportDirectory();
       tempDir = Directory('${baseDir.path}/content-package-tmp');
       if (await tempDir.exists()) {
@@ -214,15 +201,53 @@ class ContentPackageService {
       }
       await tempDir.create(recursive: true);
 
-      for (final file in archive) {
-        final filePath = '${tempDir.path}/${file.name}';
-        if (file.isFile) {
-          final outFile = File(filePath);
-          await outFile.create(recursive: true);
-          await outFile.writeAsBytes(file.content as List<int>);
-        } else {
-          await Directory(filePath).create(recursive: true);
-        }
+      if (isPaid) {
+        // Full/paid package: two separate zips, downloaded and extracted
+        // one after another into the same temp folder (they populate
+        // different subfolders - sounds/ and images/ - so there's no
+        // overlap). If EITHER one fails or is corrupted, the whole attempt
+        // fails and the outer retry loop tries both again from scratch.
+        final combinedKnownTotal = knownTotalBytes ?? await getRemoteZipSizeBytes(isPaid: true) ?? 0;
+
+        int bytesReceivedSoFar = 0;
+
+        await _downloadAndExtractSingleZip(
+          url: fullSoundsZipUrl,
+          tempDir: tempDir,
+          overallTotalBytes: combinedKnownTotal,
+          bytesAlreadyCounted: bytesReceivedSoFar,
+          onBytesReceivedUpdate: (n) => bytesReceivedSoFar = n,
+          onDownloadProgress: onDownloadProgress,
+          onStatus: onStatus,
+          downloadingStatusCode: 'downloading_sounds',
+          extractingStatusCode: 'extracting_sounds',
+        );
+
+        await _downloadAndExtractSingleZip(
+          url: fullImagesZipUrl,
+          tempDir: tempDir,
+          overallTotalBytes: combinedKnownTotal,
+          bytesAlreadyCounted: bytesReceivedSoFar,
+          onBytesReceivedUpdate: (n) => bytesReceivedSoFar = n,
+          onDownloadProgress: onDownloadProgress,
+          onStatus: onStatus,
+          downloadingStatusCode: 'downloading_images',
+          extractingStatusCode: 'extracting_images',
+        );
+      } else {
+        // Free package: unchanged, single zip.
+        final freeTotal = knownTotalBytes ?? await getRemoteZipSizeBytes(isPaid: false) ?? 0;
+        await _downloadAndExtractSingleZip(
+          url: freeZipUrl,
+          tempDir: tempDir,
+          overallTotalBytes: freeTotal,
+          bytesAlreadyCounted: 0,
+          onBytesReceivedUpdate: (_) {},
+          onDownloadProgress: onDownloadProgress,
+          onStatus: onStatus,
+          downloadingStatusCode: 'downloading',
+          extractingStatusCode: 'extracting',
+        );
       }
 
       // Every file extracted successfully - now safe to swap.
@@ -244,9 +269,8 @@ class ContentPackageService {
       onStatus?.call('done');
       return true;
     } catch (e) {
-      print('DEBUG downloadAndExtract failed: $e'); // NEW - temporary
-      // NEW — clean up any incomplete temp extraction so it doesn't linger
-      // as orphaned partial data taking up storage.
+      // ignore: avoid_print
+      print('DEBUG downloadAndExtract failed: $e');
       try {
         if (tempDir != null && await tempDir.exists()) {
           await tempDir.delete(recursive: true);
@@ -256,6 +280,106 @@ class ContentPackageService {
       }
       onStatus?.call('failed');
       return false;
+    }
+  }
+
+  // Downloads one zip, verifies its size matches what the server promised,
+  // decodes it, and extracts it directly into tempDir. Throws on any
+  // failure (size mismatch, corrupted zip, etc.) so the caller's try/catch
+  // and retry logic handles it uniformly, whether this is the only zip
+  // (free tier) or one of two (paid tier).
+  Future<void> _downloadAndExtractSingleZip({
+    required String url,
+    required Directory tempDir,
+    required int overallTotalBytes,
+    required int bytesAlreadyCounted,
+    required void Function(int totalBytesReceivedSoFar) onBytesReceivedUpdate,
+    void Function(DownloadProgress progress)? onDownloadProgress,
+    void Function(String status)? onStatus,
+    required String downloadingStatusCode,
+    required String extractingStatusCode,
+  }) async {
+    onStatus?.call(downloadingStatusCode); // fires as THIS specific file starts
+    final request = http.Request('GET', Uri.parse(url));
+    final client = http.Client();
+    final streamedResponse = await client.send(request);
+
+    if (streamedResponse.statusCode != 200) {
+      client.close();
+      throw Exception('HTTP ${streamedResponse.statusCode} for $url');
+    }
+
+    final thisFileTotal = streamedResponse.contentLength ?? 0;
+    final bytesBuilder = BytesBuilder(copy: false);
+    int bytesReceivedThisFile = 0;
+
+    final stopwatch = Stopwatch()..start();
+
+    await for (final chunk in streamedResponse.stream) {
+      bytesBuilder.add(chunk);
+      bytesReceivedThisFile += chunk.length;
+
+      final combinedReceived = bytesAlreadyCounted + bytesReceivedThisFile;
+      final elapsedSeconds = stopwatch.elapsedMilliseconds / 1000.0;
+      double? estimatedRemaining;
+      if (elapsedSeconds > 0.5 && bytesReceivedThisFile > 0 && overallTotalBytes > 0) {
+        // FIXED — use THIS file's own bytes/time for the speed calculation,
+        // not the combined total (which includes bytes from a previous file
+        // downloaded with a different stopwatch). Using the combined count
+        // against only this file's elapsed time made the calculated speed
+        // look artificially huge right as the second file started, causing
+        // "time remaining" to collapse to ~1 second and stay stuck there.
+        final bytesPerSecond = bytesReceivedThisFile / elapsedSeconds;
+        final remainingBytes = overallTotalBytes - combinedReceived;
+        estimatedRemaining = remainingBytes / bytesPerSecond;
+      }
+
+      final progress = DownloadProgress(
+        bytesReceived: combinedReceived,
+        totalBytes: overallTotalBytes,
+        estimatedSecondsRemaining: estimatedRemaining,
+      );
+      // ignore: avoid_print
+      print('DEBUG progress ($url): received=$combinedReceived total=$overallTotalBytes percent=${progress.percent}');
+      onDownloadProgress?.call(progress);
+    }
+
+    client.close();
+    stopwatch.stop();
+
+    // Verify the download actually matches the size the server promised,
+    // BEFORE attempting to decode it. Catches an obviously truncated
+    // transfer early, with a clear reason, rather than letting it fall
+    // through to the zip decoder's more cryptic error.
+    if (thisFileTotal > 0 && bytesReceivedThisFile != thisFileTotal) {
+      throw Exception('Size mismatch for $url: received=$bytesReceivedThisFile expected=$thisFileTotal');
+    }
+
+    onBytesReceivedUpdate(bytesAlreadyCounted + bytesReceivedThisFile);
+
+    onStatus?.call(extractingStatusCode); // file-specific extraction status
+
+    final zipBytes = bytesBuilder.takeBytes();
+
+    // Decoding is wrapped separately so a corrupted/incomplete zip (e.g.
+    // "Could not find End of Central Directory Record") reads as a clean,
+    // catchable failure rather than an uncaught crash.
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(zipBytes);
+    } catch (e) {
+      throw Exception('Zip decode failed for $url: $e');
+    }
+
+    for (final file in archive) {
+      final filePath = '${tempDir.path}/${file.name}';
+      if (file.isFile) {
+        final outFile = File(filePath);
+        await outFile.create(recursive: true);
+        await outFile.writeAsBytes(file.content as List<int>);
+      } else {
+        await Directory(filePath).create(recursive: true);
+      }
     }
   }
 
@@ -271,6 +395,9 @@ class ContentPackageService {
     } else if (remoteUrl.contains('/content/media/sounds/lessons48/')) {
       final filename = remoteUrl.split('/').last;
       relativePath = 'sounds/lesson48/$filename';
+    } else if (remoteUrl.contains('/content/media/sounds/LessonNoun/')) {
+      final filename = remoteUrl.split('/').last;
+      relativePath = 'sounds/LessonNoun/$filename';
     }
 
     if (relativePath == null) return null;

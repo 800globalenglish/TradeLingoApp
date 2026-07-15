@@ -64,7 +64,7 @@ class _WelcomeWizardScreenState extends State<WelcomeWizardScreen> {
                   items: appLanguages.entries
                       .map((e) => DropdownMenuItem(
                     value: e.key,
-                    child: Text(e.key == 'en-US' ? '🇺🇸 ${e.value}' : e.value),
+                    child: Text('${appLanguageFlags[e.key] ?? ''} ${e.value}'),
                   ))
                       .toList(),
                   onChanged: (code) async {

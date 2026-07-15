@@ -1,22 +1,8 @@
-// ============================================================================
-// spelling_quiz_screen.dart — UPDATED to track per-word option/noun ids
-// ============================================================================
-// Changes from your original:
-//   1. Kept a reference to the whole spellingQuiz question (not just its
-//      .options), so we have its shared quizId available.
-//   2. Added tracking lists in _checkAnswer, same pattern as the other noun
-//      quiz screen — but quizId is the SAME single id repeated for every
-//      word (confirmed from real server data), while optionId/nounId are
-//      per-word.
-//   3. _finishQuiz now calls saveDetailedNounResult (same method the
-//      multiple-choice noun quiz screen uses) with resultKey 'spellingQuiz',
-//      matching your existing hub key so nothing else needs to change.
-// Everything else (typing UI, audio playback) is unchanged.
-// ============================================================================
-
+import 'dart:async'; // NEW
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // NEW — for reading expert/beginner preference
 import '../models/lesson.dart';
 import '../services/local_db.dart';
 import '../services/api_service.dart';
@@ -40,7 +26,7 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
   final TextEditingController _textController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  late NounQuizQuestion _spellingQuiz; // NEW — keep the whole question, not just its options
+  late NounQuizQuestion _spellingQuiz;
   late List<NounQuizOption> _words;
   int _currentIndex = 0;
   int _correctCount = 0;
@@ -48,13 +34,21 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
   bool _wasCorrect = false;
   int _lastAutoPlayedIndex = -1;
 
-  // NEW — per-word tracking, built up as the quiz progresses
   final List<int> _correctQuizIds = [];
   final List<int> _wrongQuizIds = [];
   final List<int> _correctQuizOptionIds = [];
   final List<int> _wrongQuizOptionIds = [];
   final List<int> _correctNounIds = [];
   final List<int> _wrongNounIds = [];
+
+  // NEW — timer state
+  static const int _timerDuration = 20;
+  int _secondsRemaining = _timerDuration;
+  Timer? _questionTimer;
+
+  // NEW — difficulty toggle state (set from the Quiz Hub screen, read here)
+  bool _isExpertMode = false;
+  int get _effectiveTimerDuration => _isExpertMode ? (_timerDuration / 2).round() : _timerDuration;
 
   @override
   void initState() {
@@ -66,14 +60,66 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
     );
 
     _words = List.of(_spellingQuiz.options)..shuffle(Random());
+
+    if (_words.isNotEmpty) _initDifficultyThenStartTimer(); // CHANGED — was: _startTimer();
+  }
+
+  // NEW — loads the expert/beginner preference set on the Quiz Hub screen
+  Future<void> _initDifficultyThenStartTimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isExpert = prefs.getBool('quizExpertMode') ?? false;
+    if (mounted) {
+      setState(() => _isExpertMode = isExpert);
+    }
+    _startTimer();
   }
 
   @override
   void dispose() {
+    _questionTimer?.cancel(); // NEW
     _player.dispose();
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  // NEW
+  void _startTimer() {
+    _questionTimer?.cancel();
+    _secondsRemaining = _effectiveTimerDuration; // CHANGED — was: _timerDuration
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _secondsRemaining--;
+      });
+      if (_secondsRemaining <= 0) {
+        timer.cancel();
+        _handleTimeout();
+      }
+    });
+  }
+
+  // NEW — timeout is treated the same as a wrong/blank answer
+  void _handleTimeout() {
+    if (_answered) return;
+    final currentWord = _words[_currentIndex];
+
+    setState(() {
+      _answered = true;
+      _wasCorrect = false;
+      _wrongQuizIds.add(_spellingQuiz.quizId);
+      _wrongQuizOptionIds.add(currentWord.optionId);
+      _wrongNounIds.add(currentWord.nounId);
+    });
+
+    SoundFeedback.playWrong();
+
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (mounted) _nextWord();
+    });
   }
 
   Future<void> _playAudio(String url) async {
@@ -92,6 +138,7 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
 
   void _checkAnswer() {
     if (_answered) return;
+    _questionTimer?.cancel(); // NEW
 
     final currentWord = _words[_currentIndex];
     final typed = _textController.text.trim().toLowerCase();
@@ -103,13 +150,13 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
       _wasCorrect = isCorrect;
       if (isCorrect) {
         _correctCount++;
-        _correctQuizIds.add(_spellingQuiz.quizId);        // NEW — same shared id every time, matches server pattern
-        _correctQuizOptionIds.add(currentWord.optionId);   // NEW
-        _correctNounIds.add(currentWord.nounId);           // NEW
+        _correctQuizIds.add(_spellingQuiz.quizId);
+        _correctQuizOptionIds.add(currentWord.optionId);
+        _correctNounIds.add(currentWord.nounId);
       } else {
-        _wrongQuizIds.add(_spellingQuiz.quizId);           // NEW
-        _wrongQuizOptionIds.add(currentWord.optionId);      // NEW
-        _wrongNounIds.add(currentWord.nounId);              // NEW
+        _wrongQuizIds.add(_spellingQuiz.quizId);
+        _wrongQuizOptionIds.add(currentWord.optionId);
+        _wrongNounIds.add(currentWord.nounId);
       }
     });
 
@@ -128,6 +175,7 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
         _textController.clear();
       });
       _focusNode.requestFocus();
+      _startTimer(); // NEW
     } else {
       _finishQuiz();
     }
@@ -136,12 +184,11 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
   Future<void> _finishQuiz() async {
     final score = (_correctCount / _words.length) * 100;
 
-    // CHANGED — was: savePendingResultIfBetter(widget.lesson.lessonGuid, 'spellingQuiz', score);
     await _localDb.saveDetailedNounResult(
       lessonGuid: widget.lesson.lessonGuid,
-      lessonId: widget.lesson.lessonId, // NEW
-      nounQuizType: 'spellingQuiz', // kept the same key your hub already expects
-      apiNounQuizType: 'spelling/typing', // NEW — the real server string (confirmed from live data)
+      lessonId: widget.lesson.lessonId,
+      nounQuizType: 'spellingQuiz',
+      apiNounQuizType: 'spelling/typing',
       totalQuiz: _words.length,
       totalCorrect: _correctCount,
       totalWrong: _words.length - _correctCount,
@@ -154,10 +201,6 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
       percentage: score,
     );
 
-    // NEW — fire-and-forget: pushes this result (and anything else pending)
-    // to the server right after finishing, since the lesson list screen may
-    // not get revisited this session. Not awaited so it doesn't delay the
-    // score dialog below.
     ApiService().syncPendingResults();
 
     if (!mounted) return;
@@ -179,6 +222,31 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // NEW — same timer widget
+  Widget _buildTimer() {
+    final isLow = _secondsRemaining <= 3;
+    return Column(
+      children: [
+        Text(
+          '$_secondsRemaining',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: isLow ? Colors.red : Colors.black87,
+          ),
+        ),
+        SizedBox(
+          width: 120,
+          child: LinearProgressIndicator(
+            value: _secondsRemaining / _effectiveTimerDuration, // CHANGED — was: _timerDuration
+            color: isLow ? Colors.red : Colors.blue,
+            backgroundColor: Colors.grey.shade300,
+          ),
+        ),
+      ],
     );
   }
 
@@ -213,12 +281,8 @@ class _SpellingQuizScreenState extends State<SpellingQuizScreen> {
               style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 8),
-            Text(
-              ResourceStrings.instance.get('aiadd1462'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
+            _buildTimer(), // NEW
+            const SizedBox(height: 8),
             SizedBox(
               height: 150,
               child: ClipRRect(

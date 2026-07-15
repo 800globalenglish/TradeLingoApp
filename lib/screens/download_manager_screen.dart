@@ -226,7 +226,19 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
             : null,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              ResourceStrings.instance.get('aiadd4081'),
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      )
           : Column(
         children: [
           if (_showHeaderMessage)
@@ -340,10 +352,17 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
                       }
                     });
                   },
+                  secondary: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(child: Text('${lesson.lessonNumber}')), // NEW — matches PDF page's numbered circle
+                      const SizedBox(width: 8),
+                      isDownloaded
+                          ? const Icon(Icons.check_circle, color: Colors.green)
+                          : const Icon(Icons.cloud_download_outlined, color: Colors.grey),
+                    ],
+                  ),
                   title: Text(lesson.title.isNotEmpty ? lesson.title : 'Lesson ${lesson.lessonNumber}'),
-                  secondary: isDownloaded
-                      ? const Icon(Icons.check_circle, color: Colors.green)
-                      : const Icon(Icons.cloud_download_outlined, color: Colors.grey),
                 );
               },
             ),

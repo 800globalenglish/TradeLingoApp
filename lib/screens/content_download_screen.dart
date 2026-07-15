@@ -69,11 +69,20 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
   }
 
   String _translateStatus(String code) {
+    print('DEBUG _translateStatus received code: "$code"'); // NEW - temporary
     switch (code) {
       case 'downloading':
         return ResourceStrings.instance.get('aiadd3998');
       case 'extracting':
         return ResourceStrings.instance.get('aiadd3933');
+      case 'downloading_sounds':
+        return ResourceStrings.instance.get('aiadd4077');
+      case 'extracting_sounds':
+        return ResourceStrings.instance.get('aiadd4078');
+      case 'downloading_images':
+        return ResourceStrings.instance.get('aiadd4079');
+      case 'extracting_images':
+        return ResourceStrings.instance.get('aiadd4080');
       default:
         return '';
     }
@@ -131,7 +140,14 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(ResourceStrings.instance.get('aiadd3932'))),
+      backgroundColor: const Color(0xFF002E52), // NEW — explicit, matches what this screen already visually shows
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF002E52), // NEW — matches body so the app bar doesn't look like a mismatched band
+        title: Text(
+          ResourceStrings.instance.get('aiadd3932'),
+          style: const TextStyle(color: Colors.white), // NEW
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -140,43 +156,48 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
             Icon(
               _service.isContentAvailableLocally ? Icons.check_circle : Icons.cloud_download_outlined,
               size: 64,
-              color: _service.isContentAvailableLocally ? Colors.green : Colors.grey,
+              color: _service.isContentAvailableLocally ? Colors.greenAccent : Colors.white70, // CHANGED — Colors.grey was nearly invisible on dark blue too
             ),
             const SizedBox(height: 24),
             if (_isChecking)
-              const CircularProgressIndicator()
+              const CircularProgressIndicator(color: Colors.white) // CHANGED — default spinner color is also hard to see on dark blue
             else
             // CHANGED — wrapped in a full-width SizedBox so textAlign.center
             // actually has room to center within, instead of the Text
             // shrinking to fit its content and looking left-pulled.
               SizedBox(
                 width: double.infinity,
-                child: Text(_statusMessage, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+                child: Text(
+                  _statusMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.white), // CHANGED — explicit color, was invisible
+                ),
               ),
             const SizedBox(height: 24),
-            if (_isDownloading && _currentStatusCode == 'extracting')
-              const CircularProgressIndicator()
+            if (_isDownloading && (_currentStatusCode == 'extracting' || _currentStatusCode == 'extracting_sounds' || _currentStatusCode == 'extracting_images'))
+              const CircularProgressIndicator(color: Colors.white) // CHANGED
             else if (_isDownloading && _progress != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: _progress!.percent > 0 ? _progress!.percent : null,
                   minHeight: 8,
+                  backgroundColor: Colors.white24, // NEW — so the track is visible against dark blue too
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
                 ),
               ),
               const SizedBox(height: 12),
               Text(
                 '${_progress!.megabytesReceived.toStringAsFixed(1)} MB of ${_progress!.totalMegabytes.toStringAsFixed(0)} MB',
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: 13, color: Colors.white70), // CHANGED
               ),
               const SizedBox(height: 4),
               Text(
                 '${ResourceStrings.instance.get('aiadd3931')}: ${_formatTimeRemaining(_progress!.estimatedSecondsRemaining)}',
-                style: const TextStyle(fontSize: 13, color: Colors.grey),
+                style: const TextStyle(fontSize: 13, color: Colors.white54), // CHANGED
               ),
             ] else if (_isDownloading)
-              const CircularProgressIndicator()
+              const CircularProgressIndicator(color: Colors.white) // CHANGED
             else if (!_isChecking && (_updateAvailable || !_service.isContentAvailableLocally))
                 ElevatedButton.icon(
                   icon: const Icon(Icons.download),

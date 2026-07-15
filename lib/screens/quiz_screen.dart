@@ -1,22 +1,8 @@
-// ============================================================================
-// quiz_screen.dart (noun quiz) — UPDATED to track per-question ids
-// ============================================================================
-// Changes from your original:
-//   1. Added six tracking lists, populated in _selectAnswer:
-//        _correctQuizIds / _wrongQuizIds       -> question.quizId
-//        _correctQuizOptionIds / _wrongQuizOptionIds -> the SELECTED option's optionId
-//        _correctNounIds / _wrongNounIds        -> the TESTED noun's id (question.correctOption.nounId)
-//      Note: the "tested noun" is always question.correctOption.nounId, whether
-//      the student got it right or wrong — it identifies which vocab word this
-//      question was about, matching the server's per-noun mastery tracking.
-//   2. _finishQuiz now calls a NEW local_db method: saveDetailedNounResult
-//      (defined in the next step). REPLACES savePendingResultIfBetter.
-// Everything else (audio playback, UI, clue building) is unchanged.
-// ============================================================================
-
+import 'dart:async'; // NEW — needed for Timer
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // NEW — for saving expert/beginner preference
 import '../models/lesson.dart';
 import '../services/local_db.dart';
 import '../services/api_service.dart';
@@ -28,7 +14,7 @@ import '../services/sound_feedback.dart';
 
 class QuizScreen extends StatefulWidget {
   final Lesson lesson;
-  final String quizType; // "text/image", "image/audio", or "text/audio"
+  final String quizType;
   final String screenTitle;
   final String resultKey;
 
@@ -55,13 +41,21 @@ class _QuizScreenState extends State<QuizScreen> {
   NounQuizOption? _selectedOption;
   int _lastAutoPlayedIndex = -1;
 
-  // NEW — per-question tracking, built up as the quiz progresses
   final List<int> _correctQuizIds = [];
   final List<int> _wrongQuizIds = [];
   final List<int> _correctQuizOptionIds = [];
   final List<int> _wrongQuizOptionIds = [];
   final List<int> _correctNounIds = [];
   final List<int> _wrongNounIds = [];
+
+  // NEW — timer state
+  static const int _timerDuration = 15;
+  int _secondsRemaining = _timerDuration;
+  Timer? _questionTimer;
+
+  // NEW — difficulty toggle state
+  bool _isExpertMode = false;
+  int get _effectiveTimerDuration => _isExpertMode ? (_timerDuration / 2).round() : _timerDuration;
 
   @override
   void initState() {
@@ -71,12 +65,73 @@ class _QuizScreenState extends State<QuizScreen> {
         .where((q) => q.quizType == widget.quizType)
         .toList()
       ..shuffle(Random());
+
+    _initDifficultyThenStartTimer(); // CHANGED — was: _startTimer();
+  }
+
+  // NEW — loads the saved expert/beginner preference before the first timer starts
+  Future<void> _initDifficultyThenStartTimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isExpert = prefs.getBool('quizExpertMode') ?? false;
+    if (mounted) {
+      setState(() => _isExpertMode = isExpert);
+    }
+    _startTimer();
+  }
+
+  // NEW — called when the student flips the switch mid-quiz
+  Future<void> _toggleExpertMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('quizExpertMode', value);
+    setState(() => _isExpertMode = value);
+    _startTimer(); // restart the current question's timer at the new speed
   }
 
   @override
   void dispose() {
+    _questionTimer?.cancel(); // NEW
     _player.dispose();
     super.dispose();
+  }
+
+  // NEW — starts (or restarts) the countdown for the current question
+  void _startTimer() {
+    _questionTimer?.cancel();
+    _secondsRemaining = _effectiveTimerDuration; // CHANGED — was: _timerDuration
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _secondsRemaining--;
+      });
+      if (_secondsRemaining <= 0) {
+        timer.cancel();
+        _handleTimeout();
+      }
+    });
+  }
+
+  // NEW — called when the timer runs out before the student answers
+  void _handleTimeout() {
+    if (_answered) return; // safety check in case answer landed right as timer expired
+    final question = _questions[_currentIndex];
+    final testedNounId = question.correctOption.nounId;
+
+    setState(() {
+      _answered = true;
+      _selectedOption = null; // no option was chosen
+      _wrongQuizIds.add(question.quizId);
+      _wrongQuizOptionIds.add(-1); // -1 signals "no answer selected / timed out"
+      _wrongNounIds.add(testedNounId);
+    });
+
+    SoundFeedback.playWrong();
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) _nextQuestion();
+    });
   }
 
   Future<void> _playAudio(String url) async {
@@ -98,21 +153,22 @@ class _QuizScreenState extends State<QuizScreen> {
 
   void _selectAnswer(NounQuizOption option) {
     if (_answered) return;
+    _questionTimer?.cancel(); // NEW — stop the countdown once an answer is picked
     final question = _questions[_currentIndex];
-    final testedNounId = question.correctOption.nounId; // NEW — the vocab word this question tests
+    final testedNounId = question.correctOption.nounId;
 
     setState(() {
       _answered = true;
       _selectedOption = option;
       if (option.isCorrect) {
         _correctCount++;
-        _correctQuizIds.add(question.quizId);           // NEW
-        _correctQuizOptionIds.add(option.optionId);      // NEW
-        _correctNounIds.add(testedNounId);               // NEW
+        _correctQuizIds.add(question.quizId);
+        _correctQuizOptionIds.add(option.optionId);
+        _correctNounIds.add(testedNounId);
       } else {
-        _wrongQuizIds.add(question.quizId);              // NEW
-        _wrongQuizOptionIds.add(option.optionId);         // NEW
-        _wrongNounIds.add(testedNounId);                  // NEW
+        _wrongQuizIds.add(question.quizId);
+        _wrongQuizOptionIds.add(option.optionId);
+        _wrongNounIds.add(testedNounId);
       }
     });
 
@@ -130,6 +186,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _answered = false;
         _selectedOption = null;
       });
+      _startTimer(); // NEW — restart the countdown for the new question
     } else {
       _finishQuiz();
     }
@@ -138,12 +195,11 @@ class _QuizScreenState extends State<QuizScreen> {
   Future<void> _finishQuiz() async {
     final score = (_correctCount / _questions.length) * 100;
 
-    // CHANGED — was: savePendingResultIfBetter(widget.lesson.lessonGuid, widget.resultKey, score);
     await _localDb.saveDetailedNounResult(
       lessonGuid: widget.lesson.lessonGuid,
-      lessonId: widget.lesson.lessonId, // NEW
+      lessonId: widget.lesson.lessonId,
       nounQuizType: widget.resultKey,
-      apiNounQuizType: widget.quizType, // NEW — the real server string, e.g. "text/image"
+      apiNounQuizType: widget.quizType,
       totalQuiz: _questions.length,
       totalCorrect: _correctCount,
       totalWrong: _questions.length - _correctCount,
@@ -156,10 +212,6 @@ class _QuizScreenState extends State<QuizScreen> {
       percentage: score,
     );
 
-    // NEW — fire-and-forget: pushes this result (and anything else pending)
-    // to the server right after finishing, since the lesson list screen may
-    // not get revisited this session. Not awaited so it doesn't delay the
-    // score dialog below.
     ApiService().syncPendingResults();
 
     if (!mounted) return;
@@ -238,6 +290,31 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
+  // NEW — small countdown widget shown at the top of the screen
+  Widget _buildTimer() {
+    final isLow = _secondsRemaining <= 3;
+    return Column(
+      children: [
+        Text(
+          '$_secondsRemaining',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: isLow ? Colors.red : Colors.black87,
+          ),
+        ),
+        SizedBox(
+          width: 120,
+          child: LinearProgressIndicator(
+            value: _secondsRemaining / _effectiveTimerDuration, // CHANGED — was: _timerDuration
+            color: isLow ? Colors.red : Colors.blue,
+            backgroundColor: Colors.grey.shade300,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_questions.isEmpty) {
@@ -270,11 +347,7 @@ class _QuizScreenState extends State<QuizScreen> {
               style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 8),
-            Text(
-              widget.screenTitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+            _buildTimer(), // NEW — countdown display
             const SizedBox(height: 16),
             _buildClue(question, correctAnswer),
             const SizedBox(height: 24),

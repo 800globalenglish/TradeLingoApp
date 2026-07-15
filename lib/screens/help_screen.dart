@@ -20,16 +20,19 @@ class HelpScreen extends StatelessWidget {
       ],
     },
     {
-      'header': 'aiadd4043', // Downloading & Offline Use
+      'header': 'aiadd4044', // Quizzes, Oral Exams & Progress
       'items': [
-        {'question': 'aiadd4021', 'answer': 'aiadd4022'},
-        {'question': 'aiadd4023', 'answer': 'aiadd4024'},
-        {'question': 'aiadd4031', 'answer': 'aiadd4032'},
+        {'question': 'aiadd4067', 'answer': 'aiadd4068'},
+        {'question': 'aiadd4025', 'answer': 'aiadd4026'},
+        {'question': 'aiadd4069', 'answer': 'aiadd4070 aiadd4073 aiadd4072'},
+        {'question': 'aiadd4045', 'answer': 'aiadd4046'},
+        {'question': 'aiadd4029', 'answer': 'aiadd4030'},
       ],
     },
     {
       'header': 'aiadd4044', // Quizzes, Oral Exams & Progress
       'items': [
+        {'question': 'aiadd4067', 'answer': 'aiadd4068'},
         {'question': 'aiadd4025', 'answer': 'aiadd4026'},
         {'question': 'aiadd4045', 'answer': 'aiadd4046'},
         {'question': 'aiadd4029', 'answer': 'aiadd4030'},
@@ -96,7 +99,15 @@ class HelpScreen extends StatelessWidget {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            rs.get(faq['answer']!),
+                            // NEW — splits the answer field on spaces, looks up each
+                            // resource key separately, and joins them with a blank
+                            // line. This lets one FAQ answer combine multiple already-
+                            // translated sentence keys without touching the database
+                            // or re-translating anything.
+                            faq['answer']!
+                                .split(' ')
+                                .map((key) => rs.get(key))
+                                .join('\n\n'),
                             style: const TextStyle(color: Colors.white70),
                           ),
                         ),

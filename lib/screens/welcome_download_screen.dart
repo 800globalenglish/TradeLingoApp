@@ -59,6 +59,14 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
         return ResourceStrings.instance.get('aiadd4016');
       case 'extracting':
         return ResourceStrings.instance.get('aiadd3933');
+      case 'downloading_sounds': // NEW
+        return ResourceStrings.instance.get('aiadd4077');
+      case 'extracting_sounds': // NEW
+        return ResourceStrings.instance.get('aiadd4078');
+      case 'downloading_images': // NEW
+        return ResourceStrings.instance.get('aiadd4079');
+      case 'extracting_images': // NEW
+        return ResourceStrings.instance.get('aiadd4080');
       default:
         return '';
     }
@@ -163,7 +171,7 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
                 style: const TextStyle(color: Colors.white70, fontSize: 15),
               ),
               const SizedBox(height: 24),
-              if (_isDownloading && _currentStatusCode == 'extracting') ...[
+              if (_isDownloading && (_currentStatusCode == 'extracting' || _currentStatusCode == 'extracting_sounds' || _currentStatusCode == 'extracting_images')) ...[
                 const CircularProgressIndicator(color: Colors.white),
                 const SizedBox(height: 24),
               ] else if (_isDownloading && _progress != null) ...[

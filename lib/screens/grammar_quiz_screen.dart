@@ -1,6 +1,7 @@
-
+import 'dart:async'; // NEW
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // NEW — for reading expert/beginner preference
 import '../models/lesson.dart';
 import '../services/local_db.dart';
 import '../services/api_service.dart';
@@ -10,9 +11,9 @@ import '../services/sound_feedback.dart';
 
 class GrammarQuizScreen extends StatefulWidget {
   final Lesson lesson;
-  final String quizType; // "grammar", "spelling", or "advance"
-  final String screenTitle; // e.g. "Grammar Quiz", "Spelling Quiz", "Advanced Quiz"
-  final String resultKey; // key used when saving score locally, must be unique per type
+  final String quizType;
+  final String screenTitle;
+  final String resultKey;
 
   const GrammarQuizScreen({
     super.key,
@@ -35,17 +36,21 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
   bool _answered = false;
   GrammarQuizOption? _selectedOption;
 
-  // NEW — per-question tracking, built up as the quiz progresses
   final List<int> _correctQuizIds = [];
   final List<int> _wrongQuizIds = [];
+
+  // NEW — timer state
+  static const int _timerDuration = 24;
+  int _secondsRemaining = _timerDuration;
+  Timer? _questionTimer;
+
+  // NEW — difficulty toggle state (set from the Quiz Hub screen, read here)
+  bool _isExpertMode = false;
+  int get _effectiveTimerDuration => _isExpertMode ? (_timerDuration / 2).round() : _timerDuration;
 
   @override
   void initState() {
     super.initState();
-    // FIXED — cap at 10 questions after shuffling, matching the website's own
-    // PrePareQuizListing behavior (objQC.Take(10)). Without this, lessons with
-    // more than ~14 questions of a type overflow the server's 100-character
-    // CorrectQuizids column and every submission from that quiz silently fails.
     _questions = widget.lesson.grammarQuizzes
         .where((q) => q.quizType == widget.quizType)
         .toList()
@@ -57,10 +62,66 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
     for (final q in _questions) {
       q.options.shuffle(Random());
     }
+
+    _initDifficultyThenStartTimer(); // CHANGED — was: _startTimer();
+  }
+
+  // NEW — loads the expert/beginner preference set on the Quiz Hub screen
+  Future<void> _initDifficultyThenStartTimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isExpert = prefs.getBool('quizExpertMode') ?? false;
+    if (mounted) {
+      setState(() => _isExpertMode = isExpert);
+    }
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _questionTimer?.cancel(); // NEW
+    super.dispose();
+  }
+
+  // NEW
+  void _startTimer() {
+    _questionTimer?.cancel();
+    _secondsRemaining = _effectiveTimerDuration; // CHANGED — was: _timerDuration
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _secondsRemaining--;
+      });
+      if (_secondsRemaining <= 0) {
+        timer.cancel();
+        _handleTimeout();
+      }
+    });
+  }
+
+  // NEW
+  void _handleTimeout() {
+    if (_answered) return;
+    final question = _questions[_currentIndex];
+
+    setState(() {
+      _answered = true;
+      _selectedOption = null;
+      _wrongQuizIds.add(question.quizId);
+    });
+
+    SoundFeedback.playWrong();
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) _nextQuestion();
+    });
   }
 
   void _selectAnswer(GrammarQuizOption option) {
     if (_answered) return;
+    _questionTimer?.cancel(); // NEW
     final question = _questions[_currentIndex];
 
     setState(() {
@@ -68,9 +129,9 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
       _selectedOption = option;
       if (option.isCorrect) {
         _correctCount++;
-        _correctQuizIds.add(question.quizId); // NEW
+        _correctQuizIds.add(question.quizId);
       } else {
-        _wrongQuizIds.add(question.quizId); // NEW
+        _wrongQuizIds.add(question.quizId);
       }
     });
 
@@ -88,6 +149,7 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
         _answered = false;
         _selectedOption = null;
       });
+      _startTimer(); // NEW
     } else {
       _finishQuiz();
     }
@@ -96,17 +158,12 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
   Future<void> _finishQuiz() async {
     final score = (_correctCount / _questions.length) * 100;
 
-    // Maps widget.quizType ("grammar"/"spelling"/"advance") to the server's
-    // RefQuizTypeID (1/2/3) — computed directly from the known quiz type,
-    // not the hub resultKey, so it can't drift if resultKey naming changes.
     final apiQuizTypeId = widget.quizType == 'grammar'
         ? 1
         : widget.quizType == 'spelling'
         ? 2
-        : 3; // 'advance'
+        : 3;
 
-    // CHANGED — was: savePendingResultIfBetter(widget.lesson.lessonGuid, widget.resultKey, score);
-    // Now saves the full detail needed for server sync, not just the score.
     await _localDb.saveDetailedGrammarResult(
       lessonGuid: widget.lesson.lessonGuid,
       lessonId: widget.lesson.lessonId,
@@ -120,10 +177,6 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
       percentage: score,
     );
 
-    // NEW — fire-and-forget: pushes this result (and anything else pending)
-    // to the server right after finishing, since the lesson list screen may
-    // not get revisited this session. Not awaited so it doesn't delay the
-    // score dialog below.
     ApiService().syncPendingResults();
 
     if (!mounted) return;
@@ -175,6 +228,31 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
     );
   }
 
+  // NEW — same timer widget as the noun quiz
+  Widget _buildTimer() {
+    final isLow = _secondsRemaining <= 3;
+    return Column(
+      children: [
+        Text(
+          '$_secondsRemaining',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: isLow ? Colors.red : Colors.black87,
+          ),
+        ),
+        SizedBox(
+          width: 120,
+          child: LinearProgressIndicator(
+            value: _secondsRemaining / _effectiveTimerDuration, // CHANGED — was: _timerDuration
+            color: isLow ? Colors.red : Colors.blue,
+            backgroundColor: Colors.grey.shade300,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_questions.isEmpty) {
@@ -200,12 +278,8 @@ class _GrammarQuizScreenState extends State<GrammarQuizScreen> {
               style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 8),
-            Text(
-              widget.screenTitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
+            _buildTimer(), // NEW
+            const SizedBox(height: 8),
             if (question.promptText.isNotEmpty) ...[
               const SizedBox(height: 24),
               Text(

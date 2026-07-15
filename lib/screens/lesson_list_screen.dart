@@ -157,7 +157,19 @@ class _LessonListScreenState extends State<LessonListScreen> {
       body: Container(
         color: brandDarkBlue,
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                ResourceStrings.instance.get('aiadd4074'),
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+        )
             : (_isOffline && _lessons.isEmpty)
             ? Center(
           child: Padding(

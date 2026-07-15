@@ -20,3 +20,25 @@ const Map<String, String> appLanguages = {
   'ar-SA': 'العربية',
   'uk-UA': 'Українська',
 };
+
+// Flag emoji for each language, shown next to the name in dropdowns.
+const Map<String, String> appLanguageFlags = {
+  'en-US': '🇺🇸',
+  'zh-CN': '🇨🇳',
+  'zh-HK': '🇭🇰',
+  'ko-KR': '🇰🇷',
+  'vi-VN': '🇻🇳',
+  'ja-JP': '🇯🇵',
+  'ru-RU': '🇷🇺',
+  'es-ES': '🇪🇸',
+  'de-DE': '🇩🇪',
+  'th-TH': '🇹🇭',
+  'hi-IN': '🇮🇳',
+  'fr-FR': '🇫🇷',
+  'it-IT': '🇮🇹',
+  'pt-PT': '🇵🇹',
+  'fil-PH': '🇵🇭',
+  'he-IL': '🇮🇱',
+  'ar-SA': '🇸🇦',
+  'uk-UA': '🇺🇦',
+};

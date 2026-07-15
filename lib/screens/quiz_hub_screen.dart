@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // NEW — for saving expert/beginner preference
 import '../models/lesson.dart';
 import '../services/local_db.dart';
 import '../services/app_theme.dart';
@@ -22,10 +23,29 @@ class _QuizHubScreenState extends State<QuizHubScreen> {
   Map<String, double?> _scores = {};
   bool _loading = true;
 
+  // NEW — expert/beginner timer speed toggle, shared with quiz_screen.dart
+  bool _isExpertMode = false;
+
   @override
   void initState() {
     super.initState();
     _loadScores();
+    _loadExpertMode(); // NEW
+  }
+
+  // NEW — loads the saved expert/beginner preference
+  Future<void> _loadExpertMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isExpert = prefs.getBool('quizExpertMode') ?? false;
+    if (!mounted) return;
+    setState(() => _isExpertMode = isExpert);
+  }
+
+  // NEW — saves the preference whenever the switch is flipped here
+  Future<void> _toggleExpertMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('quizExpertMode', value);
+    setState(() => _isExpertMode = value);
   }
 
   Future<void> _loadScores() async {
@@ -141,6 +161,21 @@ class _QuizHubScreenState extends State<QuizHubScreen> {
           : ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // NEW — expert/beginner timer speed toggle, applies to all quizzes below
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('🐢', style: TextStyle(fontSize: 24)),
+                Switch(
+                  value: _isExpertMode,
+                  onChanged: _toggleExpertMode,
+                ),
+                const Text('🐇', style: TextStyle(fontSize: 24)),
+              ],
+            ),
+          ),
           if (widget.lesson.lessonNumber == 27)
             Container(
               width: double.infinity,
