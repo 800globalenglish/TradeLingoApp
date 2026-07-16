@@ -3,6 +3,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/content_package_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/resource_strings.dart';
+import '../services/api_service.dart';
+import '../services/tradelingo_language_map.dart';
 import 'splash_screen.dart';
 
 class WelcomeDownloadScreen extends StatefulWidget {
@@ -30,11 +32,7 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
   }
 
   Future<void> _loadRealSize() async {
-    final isPaidResult = await _service.checkIsPaidNow();
-    final prefs = await SharedPreferences.getInstance();
-    final downloadedTier = prefs.getString('contentPackageTier');
-    final isPaid = isPaidResult ?? (downloadedTier == 'full');
-    final size = await _service.getRemoteZipSizeBytes(isPaid: isPaid);
+    final size = await _service.getRemoteTotalSizeBytes();
     if (mounted) setState(() => _knownSizeBytes = size);
   }
 
@@ -54,10 +52,6 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
 
   String _translateStatus(String code) {
     switch (code) {
-      case 'downloading':
-        return ResourceStrings.instance.get('aiadd4016');
-      case 'extracting':
-        return ResourceStrings.instance.get('aiadd3933');
       case 'downloading_sounds':
         return ResourceStrings.instance.get('aiadd4077');
       case 'extracting_sounds':
@@ -117,14 +111,19 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
       _downloadComplete = success;
       _downloadFailed = !success;
       _statusMessage = success
-          ? ResourceStrings.instance.get('aiadd4014')
+          ? ResourceStrings.instance.get('aiadd3999')
           : ResourceStrings.instance.get('aiadd4015');
     });
+
+    if (success) {
+      final prefs = await SharedPreferences.getInstance();
+      final appLanguageCode = prefs.getString('selectedLanguage') ?? 'en-US';
+      final languageId = tradeLingoLanguageIdFor(appLanguageCode);
+      // ignore: unawaited_futures
+      ApiService().prefetchBothIndustryTrees(languageId);
+    }
   }
 
-  // CHANGED — used to route into DownloadManagerScreen's video-lesson
-  // onboarding (now deleted). For TradeLingo there's no separate onboarding
-  // step after this — just go straight to the home screen (industry picker).
   Future<void> _continueAfterDownload() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSeenWelcomeContentDownload', true);
@@ -154,7 +153,7 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                _downloadComplete ? ResourceStrings.instance.get('aiadd4013') : ResourceStrings.instance.get('aiadd3932'),
+                _downloadComplete ? ResourceStrings.instance.get('aiadd3925') : ResourceStrings.instance.get('aiadd3932'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
               ),
@@ -165,7 +164,7 @@ class _WelcomeDownloadScreenState extends State<WelcomeDownloadScreen> {
                 style: const TextStyle(color: Colors.white70, fontSize: 15),
               ),
               const SizedBox(height: 24),
-              if (_isDownloading && (_currentStatusCode == 'extracting' || _currentStatusCode == 'extracting_sounds' || _currentStatusCode == 'extracting_images')) ...[
+              if (_isDownloading && (_currentStatusCode == 'extracting_sounds' || _currentStatusCode == 'extracting_images')) ...[
                 const CircularProgressIndicator(color: Colors.white),
                 const SizedBox(height: 24),
               ] else if (_isDownloading && _progress != null) ...[

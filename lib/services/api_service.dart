@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // TODO: replace with your real server address once the endpoints exist,
 // e.g. https://www.800globalenglish.com
-const String baseUrl = 'https://rpm.aibiz4u.com';
+const String baseUrl = 'https://www.800globalenglish.com';
 
 class ApiService {
   // ---------- LOGIN ----------
@@ -107,20 +107,66 @@ class ApiService {
   }) async {
     try {
       final token = await getSavedToken();
+      // ignore: avoid_print
+      print('DEBUG fetchResourceTree: pageId=$pageId languageId=$languageId token=$token');
+
       final response = await http.get(Uri.parse(
           '$baseUrl/MobileApi/GetResourceTree?pageId=$pageId&languageId=$languageId&token=$token'));
+
+      // ignore: avoid_print
+      print('DEBUG fetchResourceTree: statusCode=${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           return List<Map<String, dynamic>>.from(data['items']);
         }
+        // ignore: avoid_print
+        print('DEBUG fetchResourceTree: server responded but success=false. Message: ${data['message']}');
+        return null;
       }
+
+      // ignore: avoid_print
+      print('DEBUG fetchResourceTree: non-200 response body: ${response.body}');
       return null;
     } catch (e) {
       // ignore: avoid_print
       print('DEBUG fetchResourceTree error: $e');
       return null; // offline - caller should fall back to cached tree if any
     }
+  }
+
+  // The local cache key format is shared between here and
+  // ResourceBrowserScreen — keep both in sync if this ever changes.
+  static String resourceTreeCacheKey(int pageId, int languageId) =>
+      'cachedResourceTree_${pageId}_$languageId';
+
+  // Fetches one industry's tree and saves it to local cache on success,
+  // returning whether it succeeded. Used both by ResourceBrowserScreen
+  // itself (when someone opens an industry) and proactively right after
+  // the content package finishes downloading, so both industries are
+  // ready to browse offline without requiring a separate live visit to each.
+  Future<bool> fetchAndCacheResourceTree({
+    required int pageId,
+    required int languageId,
+  }) async {
+    final raw = await fetchResourceTree(pageId: pageId, languageId: languageId);
+    if (raw == null) return false;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(resourceTreeCacheKey(pageId, languageId), jsonEncode(raw));
+    return true;
+  }
+
+  // Pre-warms the local cache for BOTH industries at once, for the given
+  // language. Call this right after the content package (images/sounds)
+  // finishes downloading, so someone doesn't have to separately open both
+  // Restaurant and Construction while still online just to make them
+  // available offline later.
+  Future<void> prefetchBothIndustryTrees(int languageId) async {
+    await Future.wait([
+      fetchAndCacheResourceTree(pageId: 1, languageId: languageId),
+      fetchAndCacheResourceTree(pageId: 2, languageId: languageId),
+    ]);
   }
 }

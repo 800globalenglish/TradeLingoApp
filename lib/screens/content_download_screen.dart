@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../services/content_package_service.dart';
 import '../services/resource_strings.dart';
+import '../services/api_service.dart';
+import '../services/tradelingo_language_map.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ContentDownloadScreen extends StatefulWidget {
   const ContentDownloadScreen({super.key});
@@ -29,14 +31,7 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
   }
 
   Future<void> _loadRealSize() async {
-    // FIXED — checkIsPaidNow() now returns bool?; null means "couldn't
-    // verify" (e.g. offline), so fall back to the last known tier rather
-    // than assuming free.
-    final isPaidResult = await _service.checkIsPaidNow();
-    final prefs = await SharedPreferences.getInstance();
-    final downloadedTier = prefs.getString('contentPackageTier');
-    final isPaid = isPaidResult ?? (downloadedTier == 'full');
-    final size = await _service.getRemoteZipSizeBytes(isPaid: isPaid);
+    final size = await _service.getRemoteTotalSizeBytes();
     if (mounted) setState(() => _knownSizeBytes = size);
   }
 
@@ -69,12 +64,7 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
   }
 
   String _translateStatus(String code) {
-    print('DEBUG _translateStatus received code: "$code"'); // NEW - temporary
     switch (code) {
-      case 'downloading':
-        return ResourceStrings.instance.get('aiadd3998');
-      case 'extracting':
-        return ResourceStrings.instance.get('aiadd3933');
       case 'downloading_sounds':
         return ResourceStrings.instance.get('aiadd4077');
       case 'extracting_sounds':
@@ -135,17 +125,25 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
           ? ResourceStrings.instance.get('aiadd3999')
           : ResourceStrings.instance.get('aiadd4000');
     });
+
+    if (success) {
+      final prefs = await SharedPreferences.getInstance();
+      final appLanguageCode = prefs.getString('selectedLanguage') ?? 'en-US';
+      final languageId = tradeLingoLanguageIdFor(appLanguageCode);
+      // ignore: unawaited_futures
+      ApiService().prefetchBothIndustryTrees(languageId);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF002E52), // NEW — explicit, matches what this screen already visually shows
+      backgroundColor: const Color(0xFF002E52),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF002E52), // NEW — matches body so the app bar doesn't look like a mismatched band
+        backgroundColor: const Color(0xFF002E52),
         title: Text(
           ResourceStrings.instance.get('aiadd3932'),
-          style: const TextStyle(color: Colors.white), // NEW
+          style: const TextStyle(color: Colors.white),
         ),
       ),
       body: Padding(
@@ -156,48 +154,45 @@ class _ContentDownloadScreenState extends State<ContentDownloadScreen> {
             Icon(
               _service.isContentAvailableLocally ? Icons.check_circle : Icons.cloud_download_outlined,
               size: 64,
-              color: _service.isContentAvailableLocally ? Colors.greenAccent : Colors.white70, // CHANGED — Colors.grey was nearly invisible on dark blue too
+              color: _service.isContentAvailableLocally ? Colors.greenAccent : Colors.white70,
             ),
             const SizedBox(height: 24),
             if (_isChecking)
-              const CircularProgressIndicator(color: Colors.white) // CHANGED — default spinner color is also hard to see on dark blue
+              const CircularProgressIndicator(color: Colors.white)
             else
-            // CHANGED — wrapped in a full-width SizedBox so textAlign.center
-            // actually has room to center within, instead of the Text
-            // shrinking to fit its content and looking left-pulled.
               SizedBox(
                 width: double.infinity,
                 child: Text(
                   _statusMessage,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16, color: Colors.white), // CHANGED — explicit color, was invisible
+                  style: const TextStyle(fontSize: 16, color: Colors.white),
                 ),
               ),
             const SizedBox(height: 24),
-            if (_isDownloading && (_currentStatusCode == 'extracting' || _currentStatusCode == 'extracting_sounds' || _currentStatusCode == 'extracting_images'))
-              const CircularProgressIndicator(color: Colors.white) // CHANGED
+            if (_isDownloading && (_currentStatusCode == 'extracting_sounds' || _currentStatusCode == 'extracting_images'))
+              const CircularProgressIndicator(color: Colors.white)
             else if (_isDownloading && _progress != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: _progress!.percent > 0 ? _progress!.percent : null,
                   minHeight: 8,
-                  backgroundColor: Colors.white24, // NEW — so the track is visible against dark blue too
+                  backgroundColor: Colors.white24,
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
                 ),
               ),
               const SizedBox(height: 12),
               Text(
                 '${_progress!.megabytesReceived.toStringAsFixed(1)} MB of ${_progress!.totalMegabytes.toStringAsFixed(0)} MB',
-                style: const TextStyle(fontSize: 13, color: Colors.white70), // CHANGED
+                style: const TextStyle(fontSize: 13, color: Colors.white70),
               ),
               const SizedBox(height: 4),
               Text(
                 '${ResourceStrings.instance.get('aiadd3931')}: ${_formatTimeRemaining(_progress!.estimatedSecondsRemaining)}',
-                style: const TextStyle(fontSize: 13, color: Colors.white54), // CHANGED
+                style: const TextStyle(fontSize: 13, color: Colors.white54),
               ),
             ] else if (_isDownloading)
-              const CircularProgressIndicator(color: Colors.white) // CHANGED
+              const CircularProgressIndicator(color: Colors.white)
             else if (!_isChecking && (_updateAvailable || !_service.isContentAvailableLocally))
                 ElevatedButton.icon(
                   icon: const Icon(Icons.download),

@@ -40,9 +40,9 @@ class _WelcomeWizardScreenState extends State<WelcomeWizardScreen> {
               const AppHeader(height: 60),
               const SizedBox(height: 16),
               Text(
-                ResourceStrings.instance.get('aiadd3989'),
+                ResourceStrings.instance.get('aiadd2032'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 22),
+                style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 32),
               Text(

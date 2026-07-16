@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'content_download_screen.dart';
+import 'resource_browser_screen.dart';
+import 'login_screen.dart';
 import '../services/languages.dart';
 import '../services/api_service.dart';
 import '../widgets/app_header.dart';
@@ -84,6 +86,28 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(ResourceStrings.instance.get('aiadd4083')),
+        content: Text(ResourceStrings.instance.get('aiadd4084')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(ResourceStrings.instance.get('aiadd3911'))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(ResourceStrings.instance.get('aiadd4083'))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ApiService().logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -99,6 +123,12 @@ class _SplashScreenState extends State<SplashScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const AppHeader(height: 60),
+                      const SizedBox(height: 16),
+                      Text(
+                        ResourceStrings.instance.get('aiadd2032'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w500),
+                      ),
                       if (_username != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -167,24 +197,23 @@ class _SplashScreenState extends State<SplashScreen> {
                         ),
                       ),
                       const SizedBox(height: 32),
-                      // ---------------------------------------------------
-                      // PLACEHOLDER — industry picker.
-                      // These two buttons stand in for "Restaurant/Household"
-                      // and "Construction/General". Right now they both just
-                      // open the same ContentDownloadScreen. Once that screen
-                      // is adapted to accept a pageId (1 or 2) and point at
-                      // the matching zip/GetResourceTree call, wire each
-                      // button to its own industry here.
-                      // ---------------------------------------------------
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           icon: const Icon(Icons.restaurant),
-                          label: const Text('Restaurant / Household'),
+                          label: Text(
+                            ResourceStrings.instance.get('aiadd1468'),
+                            style: const TextStyle(fontSize: 18),
+                          ),
                           style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
                           onPressed: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
+                              MaterialPageRoute(
+                                builder: (_) => ResourceBrowserScreen(
+                                  pageId: 1,
+                                  screenTitle: ResourceStrings.instance.get('aiadd1468'),
+                                ),
+                              ),
                             );
                           },
                         ),
@@ -194,11 +223,19 @@ class _SplashScreenState extends State<SplashScreen> {
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           icon: const Icon(Icons.construction),
-                          label: const Text('Construction / General'),
+                          label: Text(
+                            ResourceStrings.instance.get('aiadd1469'),
+                            style: const TextStyle(fontSize: 18),
+                          ),
                           style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
                           onPressed: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const ContentDownloadScreen()),
+                              MaterialPageRoute(
+                                builder: (_) => ResourceBrowserScreen(
+                                  pageId: 2,
+                                  screenTitle: ResourceStrings.instance.get('aiadd1469'),
+                                ),
+                              ),
                             );
                           },
                         ),
@@ -223,7 +260,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
             ),
-            // Footer with the share-link action, only shown once we know the username
+
             if (_username != null)
               Container(
                 width: double.infinity,
@@ -232,13 +269,23 @@ class _SplashScreenState extends State<SplashScreen> {
                   color: Colors.black.withOpacity(0.15),
                   border: const Border(top: BorderSide(color: Colors.white24)),
                 ),
-                child: TextButton.icon(
-                  icon: const Icon(Icons.link, color: Colors.white70, size: 18),
-                  label: Text(
-                    ResourceStrings.instance.get('aiadd2597'),
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                  onPressed: _copyShareLink,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.link, color: Colors.white70, size: 18),
+                      label: Text(
+                        ResourceStrings.instance.get('aiadd2597'),
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      onPressed: _copyShareLink,
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.logout, color: Colors.white70, size: 18),
+                      label: Text(ResourceStrings.instance.get('aiadd4083'), style: const TextStyle(color: Colors.white70)),
+                      onPressed: _handleLogout,
+                    ),
+                  ],
                 ),
               ),
           ],

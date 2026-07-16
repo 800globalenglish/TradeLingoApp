@@ -119,6 +119,12 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const AppHeader(height: 60),
+              const SizedBox(height: 16),
+              Text(
+                ResourceStrings.instance.get('aiadd2032'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w500),
+              ),
               const SizedBox(height: 32),
               // Offline resume option, shown only if a cached session exists
               if (_checkingSession)

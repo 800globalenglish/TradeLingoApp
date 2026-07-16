@@ -6,8 +6,15 @@ class SmartImage extends StatelessWidget {
   final String url;
   final double? width;
   final double? height;
+  final BoxFit fit;
 
-  const SmartImage({super.key, required this.url, this.width, this.height});
+  const SmartImage({
+    super.key,
+    required this.url,
+    this.width,
+    this.height,
+    this.fit = BoxFit.contain,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21,6 +28,7 @@ class SmartImage extends StatelessWidget {
             File(localPath),
             width: width,
             height: height,
+            fit: fit,
             errorBuilder: (context, error, stackTrace) =>
             const Icon(Icons.image_not_supported, color: Colors.grey),
           );
@@ -30,6 +38,7 @@ class SmartImage extends StatelessWidget {
           url,
           width: width,
           height: height,
+          fit: fit,
           errorBuilder: (context, error, stackTrace) =>
           const Icon(Icons.image_not_supported, color: Colors.grey),
         );
