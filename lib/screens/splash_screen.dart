@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,6 +75,9 @@ class _SplashScreenState extends State<SplashScreen> {
       SnackBar(content: Text('${_languages[code]} ✓')),
     );
   }
+
+  // NEW — true on iOS, where the Share button is hidden for now.
+  bool get _hideShare => defaultTargetPlatform == TargetPlatform.iOS;
 
   // Builds the personal subdomain link and copies it to the clipboard.
   Future<void> _copyShareLink() async {
@@ -269,17 +273,21 @@ class _SplashScreenState extends State<SplashScreen> {
                   color: Colors.black.withOpacity(0.15),
                   border: const Border(top: BorderSide(color: Colors.white24)),
                 ),
+                // NEW — Share is hidden on iOS until we know what the shared
+                // website page shows (Apple doesn't allow pointing people to
+                // the website to buy or sign up). Log out moves to the right.
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: _hideShare ? MainAxisAlignment.end : MainAxisAlignment.spaceBetween,
                   children: [
-                    TextButton.icon(
-                      icon: const Icon(Icons.link, color: Colors.white70, size: 18),
-                      label: Text(
-                        ResourceStrings.instance.get('aiadd2597'),
-                        style: const TextStyle(color: Colors.white70),
+                    if (!_hideShare)
+                      TextButton.icon(
+                        icon: const Icon(Icons.link, color: Colors.white70, size: 18),
+                        label: Text(
+                          ResourceStrings.instance.get('aiadd2597'),
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        onPressed: _copyShareLink,
                       ),
-                      onPressed: _copyShareLink,
-                    ),
                     TextButton.icon(
                       icon: const Icon(Icons.logout, color: Colors.white70, size: 18),
                       label: Text(ResourceStrings.instance.get('aiadd4083'), style: const TextStyle(color: Colors.white70)),
