@@ -6,8 +6,8 @@ class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
 
   // NEW — email shown in the "How do I delete my account?" answer.
-  // TODO: replace with the real address from Richard.
-  static const String deleteAccountEmail = 'DELETE_ACCOUNT_EMAIL_TBD';
+  // Address confirmed by Richard.
+  static const String deleteAccountEmail = 'deleteme@800globalenglish.com';
 
   // NEW — safety catch: while deleteAccountEmail is still the placeholder,
   // any RELEASE build (App Store / Play Store) fails to compile on the
