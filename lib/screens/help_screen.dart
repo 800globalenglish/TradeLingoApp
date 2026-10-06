@@ -1,8 +1,43 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/resource_strings.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
+
+  // NEW — email shown in the "How do I delete my account?" answer.
+  // Address confirmed by Richard.
+  static const String deleteAccountEmail = 'deleteme@800globalenglish.com';
+
+  // NEW — safety catch: while deleteAccountEmail is still the placeholder,
+  // any RELEASE build (App Store / Play Store) fails to compile on the
+  // releaseGuard line. Debug builds (flutter run) still work. If you see a
+  // build error pointing here, set deleteAccountEmail above first.
+  static const String _emailPlaceholder = 'DELETE_ACCOUNT_EMAIL_TBD';
+  static const int _guardDivisor =
+      (kReleaseMode && deleteAccountEmail == _emailPlaceholder) ? 0 : 1;
+  static const int releaseGuard = 1 ~/ _guardDivisor;
+
+  // NEW — text that lives in the app instead of on the server (English only
+  // for now). Looked up by key just like server strings.
+  static const Map<String, String> _appText = {
+    'tlDeleteAccountQ': 'How do I delete my account?',
+    'tlDeleteAccountA':
+        'To delete your account and all its data, email $deleteAccountEmail '
+        'from the address on your account and ask us to delete it.',
+  };
+
+  // NEW — iOS only. Apple doesn't allow the app to point people to the
+  // website to buy, subscribe or sign up, so on iOS these are hidden or
+  // replaced. Matched by key, so server wording changes can't undo it.
+  // Android is unaffected.
+  static bool get _isIOS => defaultTargetPlatform == TargetPlatform.iOS;
+  static const Set<String> _iosHiddenSections = {'aiadd4091'}; // purchase/subscription question
+  static const Set<String> _iosHiddenQuestions = {'aiadd4053'}; // "subscription expires"
+  static const Set<String> _iosHiddenAnswerParts = {'aiadd4072'}; // "The website takes you all the way."
+  static const Map<String, String> _iosAnswerOverrides = {
+    'aiadd4042': 'You may not share your login with anyone outside your household.',
+  };
 
   // Each section: a header key, followed by its list of {question, answer} keys.
   // CHANGED — an item can now be {'answer': key} with NO 'question' — in
@@ -20,6 +55,7 @@ class HelpScreen extends StatelessWidget {
       'header': 'aiadd4040', // Account & Sharing
       'items': [
         {'question': 'aiadd4041', 'answer': 'aiadd4042'},
+        {'question': 'tlDeleteAccountQ', 'answer': 'tlDeleteAccountA'}, // NEW
       ],
     },
     {
@@ -84,10 +120,38 @@ class HelpScreen extends StatelessWidget {
     },
   ];
 
+  // NEW — the sections to show: all of them on Android; on iOS, minus the
+  // hidden sections/questions (and any section left with no items).
+  List<Map<String, dynamic>> _visibleSections() {
+    if (!_isIOS) return _faqSections;
+    final visible = <Map<String, dynamic>>[];
+    for (final section in _faqSections) {
+      if (_iosHiddenSections.contains(section['header'])) continue;
+      final items = (section['items'] as List)
+          .cast<Map<String, String>>()
+          .where((faq) => !_iosHiddenQuestions.contains(faq['question']))
+          .toList();
+      if (items.isEmpty) continue;
+      visible.add({'header': section['header'], 'items': items});
+    }
+    return visible;
+  }
+
+  // NEW — looks up one key: iOS replacement first, then app text, then the
+  // server string.
+  String _text(ResourceStrings rs, String key) {
+    if (_isIOS && _iosAnswerOverrides.containsKey(key)) return _iosAnswerOverrides[key]!;
+    return _appText[key] ?? rs.get(key);
+  }
+
   // Joins one or more space-separated resource keys in an answer field into
-  // paragraphs, same as before.
+  // paragraphs, same as before (on iOS, hidden paragraphs are skipped).
   String _resolveAnswer(ResourceStrings rs, String answerField) {
-    return answerField.split(' ').map((key) => rs.get(key)).join('\n\n');
+    return answerField
+        .split(' ')
+        .where((key) => !(_isIOS && _iosHiddenAnswerParts.contains(key)))
+        .map((key) => _text(rs, key))
+        .join('\n\n');
   }
 
   Widget _answerCard(ResourceStrings rs, String answerKey) {
@@ -123,7 +187,7 @@ class HelpScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          for (final section in _faqSections) ...[
+          for (final section in _visibleSections()) ...[
                 () {
               final items = (section['items'] as List).cast<Map<String, String>>();
               final headerKey = section['header'] as String;
@@ -188,7 +252,7 @@ class HelpScreen extends StatelessWidget {
                           iconColor: Colors.white,
                           collapsedIconColor: Colors.white70,
                           title: Text(
-                            rs.get(faq['question']!),
+                            _text(rs, faq['question']!),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                           ),
                           children: [

@@ -107,8 +107,6 @@ class ApiService {
   }) async {
     try {
       final token = await getSavedToken();
-      // ignore: avoid_print
-      print('DEBUG fetchResourceTree: pageId=$pageId languageId=$languageId token=$token');
 
       final response = await http.get(Uri.parse(
           '$baseUrl/MobileApi/GetResourceTree?pageId=$pageId&languageId=$languageId&token=$token'));
@@ -130,8 +128,7 @@ class ApiService {
       print('DEBUG fetchResourceTree: non-200 response body: ${response.body}');
       return null;
     } catch (e) {
-      // ignore: avoid_print
-      print('DEBUG fetchResourceTree error: $e');
+      // Not logged: the error text includes the request URL, which contains the token.
       return null; // offline - caller should fall back to cached tree if any
     }
   }
